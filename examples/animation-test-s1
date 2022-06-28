@@ -1,0 +1,256 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.MultiPoint();
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+var palettes = require('users/gena/packages:palettes')
+var thresholding = require('users/gena/packages:thresholding')
+
+var bounds = ee.Geometry(Map.getBounds(true))
+var scale = Map.getScale()
+
+// skip partial
+function addAllNonZero(i) { 
+  return i.set('all', i.select(0).mask().reduceRegion(ee.Reducer.allNonZero(), bounds, scale).values().get(0))
+}
+
+
+var band1 = 'VH'
+var band2 = 'VV'  
+var mode = 'IW'
+// var mode = 'EW'
+
+// var band1 = 'HH'
+// var band2 = 'HV'  
+// var mode = 'IW'
+
+// var band1 = 'HH'
+// var band2 = 'HV'  
+// var mode = 'SM'
+
+var stop = ee.Date(Date.now())
+var start = stop.advance(-1, 'year')
+
+var images = ee.ImageCollection("COPERNICUS/S1_GRD")
+  //.filterDate(start, stop)
+  .filterDate('2022-01-01', '2023-03-01')
+  // .filter(ee.Filter.dayOfYear(7*30, 10*30)) // summer
+
+  //.filterDate('2016-01-01', '2018-01-01')
+  .filterBounds(Map.getCenter())
+  // .filterBounds(Map.getBounds(true))
+  //.map(addAllNonZero).filter(ee.Filter.eq('all', 1))
+  .sort('system:time_start')
+  
+print(images.first())
+
+print('images', images.size())
+print('instrumentMode', ee.List(images.aggregate_array('instrumentMode')).distinct())
+print('Switching to: ', mode)
+
+print('images', images.size())  
+print(images.first())
+
+// images  = images
+  // Filter to get images collected in interferometric wide swath mode.
+  // .filter(ee.Filter.eq('instrumentMode', mode))
+
+print(images.size())  
+
+var images_asc = images
+  .filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+  
+var images_desc = images  
+  .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+
+images = images_asc
+// images = images_desc
+
+print(images.size())  
+
+// take *all* polarizations/modes
+//
+images = images.map(function(i) {
+  return i.select([0, 1]).rename(['b1', 'b2'])
+    .set({label: i.date().format()})
+})
+.sort('system:time_start')
+
+print(images.size())
+
+function visualizeBackscatterAndWater(i) {
+  var label = i.get('label')
+  
+  var water = i.select('b1').unitScale(-22, -10).clamp(0, 1)
+  water = ee.Image(1).subtract(water)
+  
+  i = i.visualize({bands: ['b1', 'b1', 'b2'], min: -32, max: -5 })
+  
+  var water = water.updateMask(water).visualize({ palette: palettes.cb.Blues[7] })
+  
+  // i = i.blend(water)
+  
+  i = i.set({ label: label })
+  
+  return i
+}
+
+// image 2019
+// image 2020
+
+// Map.addLayer(visualizeBackscatterAndWater(images.filterDate('2019-07-01', '2019-10-01').reduce(ee.Reducer.min()).rename(['b1', 'b2'])), {}, '2019')
+// Map.addLayer(visualizeBackscatterAndWater(images.filterDate('2020-07-01', '2020-10-01').reduce(ee.Reducer.min()).rename(['b1', 'b2'])), {}, '2020')
+
+
+
+// visualization
+images = images.map(visualizeBackscatterAndWater)
+
+
+// throw(0)
+
+print(images.first())
+
+animation.animate(images, {label: 'label', maxFrames: 50})
+
+throw(0)
+
+images = images.map(function(i) {
+  return i.visualize({bands: ['b2', 'b2', 'b1'], min: -22, max: -5})
+    .set({ label: i.get('label') })
+})
+
+// export video
+// var utils = require('users/gena/packages:utils')
+// utils.exportVideo(images, {bounds: bounds, label: 'label', maxFrames: 600, name: 'animation', label: 'label' })
+
+throw(0)
+
+images = images
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', band1))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', band2))
+  
+// median
+var min = -20, max = -5
+var min = 0, max = 0.25
+var bandNames = ee.Image(images.first()).bandNames()
+
+function resample(image) {
+  return image.resample('bilinear')
+}
+
+var median_asc = images_asc.map(resample).map(toGamma0).map(toNatural).reduce(ee.Reducer.median()).rename(bandNames)
+Map.addLayer(median_asc, {min: min, max: max, bands: [band2, band2, band1]}, 'median (asc)', false)
+
+var median_desc = images_desc.map(resample).map(toGamma0).map(toNatural).reduce(ee.Reducer.median()).rename(bandNames)
+Map.addLayer(median_desc, {min: min, max: max, bands: [band2, band2, band1]}, 'median (desc)', false)
+
+
+var dem = ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic')
+Map.addLayer(ee.Terrain.hillShadow(dem, 315, 0), {}, 'ALOS (hillshade)', false)
+
+//images = images.map(function(i) { 
+//  return i.clip(i.geometry().buffer(-25000))
+//})
+
+var years = ee.List.sequence(2016, 2018)
+
+images = images.map(toGamma0)//.map(toNatural)
+
+var duration = 1 // year
+
+var frames = years.map(function(y) {
+  y = ee.Number(y)
+  var t1 = ee.Date.fromYMD(y, 1, 1)
+  var t2 = t1.advance(duration, 'year')
+  var p = [85, 95, 99]
+  var percentiles = images.filterDate(t1, t2).select(band1).reduce(ee.Reducer.percentile(p))
+  var frame = percentiles//.add(ee.Image([0, percentiles.select(2).multiply(0.5), 0])).visualize({min: 0, max: [0.5, 0.7, 0.9]})
+    .set({label: y.format('%d').cat('-').cat(y.add(duration).format('%d'))})
+  
+  return frame
+})
+
+frames = ee.ImageCollection(frames)
+print(frames.first())
+
+animation.animate(frames, { vis: {min: -79, max: -16}, label: 'label' })
+
+/*var p = [75, 85, 90]
+var percentiles = images.filterDate('2017-01-01', '2020-01-01').map(toGamma0).map(toNatural).select(band2).reduce(ee.Reducer.percentile(p))
+Map.addLayer(percentiles, {min: min, max: max}, 'percentiles, >2017', false)
+
+var p = [85, 99, 100]
+var percentiles = images.filterDate('2017-01-01', '2020-01-01').map(toGamma0).map(toNatural).select(band2).reduce(ee.Reducer.percentile(p))
+Map.addLayer(percentiles, {min: min, max: [0.5, 0.6, 0.8]}, 'percentiles, >2017', false)
+*/
+
+
+throw(0)
+
+// visualize  
+images = images.map(function(i) {
+  var mask = ee.List(i.select(0).mask().reduceRegion(ee.Reducer.sum(), bounds, Map.getScale() * 50).values()).get(0)
+  
+  var date = i.date().format('YYYY-MM-dd')
+  
+  // i = toNatural(i.select(band))
+  // var min = 0.0, max = 0.2
+  // return i
+  //   .visualize({min: min, max: max, palette: palettes.BrBG[9].reverse() })
+  //   .set({label: date})
+  //   .set({mask: mask})
+  
+  var min = -20, max = -5
+  var min = 0.03, max = [0.2, 0.6, 0.2]
+  
+  var image = toNatural(i)
+  var output = image
+    .visualize({min: min, max: max, bands: [band2, band2, band1], gamma: 1.6})
+    
+  //var th = thresholding.computeThresholdUsingOtsu(image.select('VV').focal_median(3), 10, Map.getBounds(true), 0.5, 2, -10)
+  
+  // output = image.select('VH').gt(0.05)
+    
+  // output = ee.ImageCollection.fromImages([
+  //   output,
+  //   toNatural(i.select('VV')).cumulativeCost(ee.Image().paint(geometry, 1), 3000)
+  //   ]).mosaic()
+
+  return output
+    .set({label: i.date().format('YYYY-MM-dd')})
+    
+    
+})//.filter(ee.Filter.lt('mask', 10))
+
+print(images.aggregate_array('mask'))
+
+animation.animate(images, {label: 'label', maxFrames: 150})
+
+// // export video
+// var utils = require('users/gena/packages:utils')
+// utils.exportVideo(images, {bounds: bounds, label: 'label', maxFrames: 600, name: 'animation', label: 'label' })
+
+
+
+// Functions to convert from dB
+function toNatural(i) {
+  return ee.Image(ee.Image.constant(10.0).pow(i.divide(10.0)).copyProperties(i, ['system:time_start']));
+}
+
+// Incedence angle correction
+function toGamma0(image) {
+  return image.select(0).subtract(image.select('angle').updateMask(ee.Image(1)).multiply(Math.PI/180.0).cos().log10().multiply(10.0))
+    .copyProperties(image, ['system:time_start'])
+
+  // return image.divide(image.select('angle').multiply(Math.PI/180.0).sin().pow(2))
+  //   .copyProperties(image, ['system:time_start'])
+}
+
+

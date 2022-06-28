@@ -1,0 +1,169 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[41.83926668299614, -13.791304888844094],
+          [42.152955853269304, -11.001174273880467],
+          [39.510016356845426, -8.469634038257892],
+          [36.68369069978553, -8.642853041073879],
+          [34.43672841453508, -11.852782711507997],
+          [35.78856273635279, -14.710958258289349],
+          [39.20017614174094, -15.748674265611562]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+function generateRasterGrid(origin, dx, dy, proj) {
+  var coords = origin.transform(proj).coordinates()
+  origin = ee.Image.constant(coords.get(0)).addBands(ee.Image.constant(coords.get(1)))
+
+  var pixelCoords = ee.Image.pixelCoordinates(proj)
+
+  var grid = pixelCoords
+     .subtract(origin)
+     .divide([dx, dy]).floor()
+     .toInt().reduce(ee.Reducer.sum()).bitwiseAnd(1).rename('grid')
+
+  var xy = pixelCoords.reproject(proj.translate(coords.get(0), coords.get(1)).scale(dx, dy))
+
+  var id = xy.multiply(ee.Image.constant([1, 1000000])).reduce(ee.Reducer.sum()).rename('id')
+
+  return grid
+    .addBands(id)
+    .addBands(xy)
+}
+
+
+exports.generateRasterGrid = generateRasterGrid
+
+/***
+ * Generates a regular grid using given bounds, specified as geometry.
+ */
+var generateGrid = function(xmin, ymin, xmax, ymax, dx, dy, marginx, marginy, opt_proj) {
+  var proj = opt_proj || 'EPSG:4326'
+  
+  dx = ee.Number(dx)
+  dy = ee.Number(dy)
+
+  var xx = ee.List.sequence(xmin, ee.Number(xmax).subtract(ee.Number(dx).multiply(0.1)), dx)
+  var yy = ee.List.sequence(ymin, ee.Number(ymax).subtract(ee.Number(dy).multiply(0.1)), dy)
+  
+  var cells = xx.map(function(x) {
+    return yy.map(function(y) {
+      var x1 = ee.Number(x).subtract(marginx)
+      var x2 = ee.Number(x).add(ee.Number(dx)).add(marginx)
+      var y1 = ee.Number(y).subtract(marginy)
+      var y2 = ee.Number(y).add(ee.Number(dy)).add(marginy)
+      
+      var coords = ee.List([x1, y1, x2, y2]);
+      var rect = ee.Algorithms.GeometryConstructors.Rectangle(coords, proj, false);
+    
+      var nx = x1.add(dx.multiply(0.5)).subtract(xmin).divide(dx).floor()
+      var ny = y1.add(dy.multiply(0.5)).subtract(ymin).divide(dy).floor()
+    
+      return ee.Feature(rect)
+        .set({ 
+          nx: nx.format('%d'),
+          ny: ny.format('%d'),
+        })
+        // .set({cell_id: x1.format('%.3f').cat('_').cat(y1.format('%.3f')) })
+    })
+  }).flatten();
+
+  return ee.FeatureCollection(cells);
+}
+
+function generateGridForGeometry(g, dx, dy, opt_marginx, opt_marginy, opt_proj, opt_errorMargin) {
+  var marginx = typeof(opt_marginx) === 'undefined' ? 0 : opt_marginx
+  var marginy = typeof(opt_marginy) === 'undefined' ? 0 : opt_marginy
+
+  var proj = opt_proj || 'EPSG:4326'
+  
+  var errorMargin = opt_errorMargin || 1
+
+  var aoi = ee.Feature(g).geometry(errorMargin).transform(proj, errorMargin)
+  
+  var bounds = ee.List(aoi.bounds(errorMargin, proj).coordinates().get(0))
+  
+  var xmin = ee.List(bounds.get(0)).get(0);
+  var xmax = ee.List(bounds.get(1)).get(0);
+  var ymin = ee.List(bounds.get(0)).get(1);
+  var ymax = ee.List(bounds.get(2)).get(1);
+
+  return generateGrid(xmin, ymin, xmax, ymax, dx, dy, marginx, marginy, proj)
+    .filterBounds(aoi)
+}
+
+function generateGridForGeometryN(g, nx, ny, opt_marginx, opt_marginy, opt_proj) {
+  var coords = ee.List(g.bounds().coordinates().get(0))
+  var ll = ee.List(coords.get(0))
+  var ur = ee.List(coords.get(2))
+  var width = ee.Number(ur.get(0)).subtract(ll.get(0))
+  var height = ee.Number(ur.get(1)).subtract(ll.get(1))
+
+  return generateGridForGeometry(g, width.divide(nx), height.divide(ny), opt_marginx, opt_marginy, opt_proj)
+}
+
+function splitGridCells(cells, factor, marginX, marginY) {
+  var grids = cells.map(function(f) {
+    var aoi = f.geometry()
+    
+    var bounds = ee.List(aoi.bounds().coordinates().get(0))
+    var xmin = ee.List(bounds.get(0)).get(0);
+    var xmax = ee.List(bounds.get(1)).get(0);
+    var ymin = ee.List(bounds.get(0)).get(1);
+    var ymax = ee.List(bounds.get(2)).get(1);
+    
+    var dx = ee.Number(xmax).subtract(xmin).divide(factor)
+    var dy = ee.Number(ymax).subtract(ymin).divide(factor)
+
+    var mx = dx.multiply(marginX)
+    var my = dy.multiply(marginY)
+
+    return generateGrid(xmin, ymin, xmax, ymax, dx, dy, mx, my)
+  })
+
+  return ee.FeatureCollection(grids.flatten()).filterBounds(cells)
+}
+
+// TODO: review and refactor this!
+
+function generateGridUsingGlobal(geometry, factor, marginX, marginY) {
+  var globalGrid = ee.FeatureCollection('users/gena/global_grid')
+  
+  var cells = globalGrid.filterBounds(geometry)
+
+  return splitGridCells(cells, factor, marginX, marginY)
+}
+
+function getGlobalGridCells(g, factor) {
+  var globalGrid = ee.FeatureCollection('users/gena/global_grid')
+
+  var cells = globalGrid.filterBounds(g)
+  
+  if(factor < 2) {
+    return cells
+  }
+  
+  return splitGridCells(cells, factor, 0, 0)
+}
+
+exports.generateGrid = generateGrid
+exports.generateGridForGeometry = generateGridForGeometry
+exports.generateGridForGeometryN = generateGridForGeometryN
+
+exports.getGlobalGrid = function() { return ee.FeatureCollection('users/gena/global_grid') }
+exports.getGlobalGridCells = getGlobalGridCells
+exports.generateGridUsingGlobal = generateGridUsingGlobal
+exports.splitGridCells = splitGridCells
+
+
+// testing 
+
+function test() {
+  Map.addLayer(generateGridUsingGlobal(geometry, 5), {color: 'yellow'}, 'subgrid')
+}  
+
+//test()

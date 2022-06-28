@@ -1,0 +1,87 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometrySampling = /* color: #0b4a8b */ee.Geometry.Polygon(
+        [[[-3.1817273987824137, 16.69313705684485],
+          [-3.1817273987824137, 16.485188656693424],
+          [-2.9784803284699137, 16.485188656693424],
+          [-2.9784803284699137, 16.69313705684485]]], null, false),
+    geometryPlot = /* color: #96ff7c */ee.Geometry.Polygon(
+        [[[-2.9283552063996012, 16.69050620616005],
+          [-2.9283552063996012, 16.481896530430337],
+          [-2.2334699524933512, 16.481896530430337],
+          [-2.2334699524933512, 16.69050620616005]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var assets = require('users/gena/packages:assets')
+var charting = require('users/gena/packages:charting')
+var animation = require('users/gena/packages:animation')
+
+Map.centerObject(ee.FeatureCollection([geometrySampling, geometryPlot]))
+
+var start = ee.Date('2015-01-01')
+var stop = ee.Date('2019-01-01')
+
+var images = assets.getImages(geometrySampling, {
+  missions: ['S2', 'L8'],
+  filter: ee.Filter.date(start, stop)
+})
+
+images = assets.excludeMasked(images, geometrySampling, 30)
+
+var imagesS2 = images.filter(ee.Filter.eq('MISSION', 'S2'))
+var imagesL8 = images.filter(ee.Filter.eq('MISSION', 'L8'))
+
+var imagesPROBA = ee.ImageCollection('VITO/PROBAV/C1/S1_TOC_100M')
+  .filterDate(start, stop)
+  .select(['SWIR', 'NIR', 'RED'], ['swir', 'nir', 'red'])
+  
+imagesPROBA = assets.excludeMasked(imagesPROBA, geometrySampling, Map.getScale() * 10)
+
+imagesPROBA = imagesPROBA.map(function(i) { 
+  return i.multiply(5).divide(10000)
+    .copyProperties(i, ['system:time_start']) 
+})
+
+// show PROBA
+// animation.animate(imagesPROBA, { 
+//   clipArea: geometrySampling,
+//   vis: { min: 0.05, max: 0.5, gamma: 1.4 }
+// })
+
+// show S2
+// animation.animate(imagesS2, { 
+//   clipArea: geometrySampling,
+//   vis: { min: 0.05, max: 0.5, gamma: 1.4 }
+// })
+
+
+var plot = new charting.Plot(geometryPlot)
+
+plot.setName('Plot 1')
+
+// set plot x range usign times
+var timesS2 = ee.List(imagesS2.aggregate_array('system:time_start'))
+var timesL8 = ee.List(imagesL8.aggregate_array('system:time_start'))
+var timesPROBA = ee.List(imagesPROBA.aggregate_array('system:time_start'))
+
+var minMaxS2 = ee.Dictionary(timesS2.reduce(ee.Reducer.minMax()))
+plot.setMinMax(start.millis(), stop.millis(), 0, 1)
+
+// add rug plots
+plot.addRugSeries('rug S2', timesS2, { width: 1.5, color: '000000' })
+plot.addRugSeries('rug L8', timesL8, { width: 1.5, color: 'ff0000' })
+plot.addRugSeries('rug PROBA', timesPROBA, { width: 1.5, color: 'ff00ff' })
+
+// add colorbar CDF plot
+var vis = { min: 0.05, max: 0.5, gamma: 1.5, bands: ['swir', 'nir', 'red'] }
+var N = 250
+plot.addColorbarSeries('colorbar S2', imagesS2, geometrySampling, vis, 10, N)
+plot.addColorbarSeries('colorbar L8', imagesL8, geometrySampling, vis, 30, N)
+plot.addColorbarSeries('colorbar PROBA', imagesPROBA, geometrySampling, vis, 100, N)
+
+// var imagesClean = assets.getMostlyCleanImages(images, geometrySampling, 30)
+// var imagesCleanS2 = imagesClean.filter(ee.Filter.eq('MISSION', 'S2'))
+// var imagesCleanL8 = imagesClean.filter(ee.Filter.eq('MISSION', 'L8'))
+// plot.addColorbarSeries('colorbar S2', imagesCleanS2, geometrySampling, vis, 10)
+// plot.addColorbarSeries('colorbar L8', imagesCleanL8, geometrySampling, vis, 30)
+
+plot.show()
+

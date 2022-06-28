@@ -1,0 +1,481 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+/***
+ * Constructor.
+ */
+var ScatterChart = function(bounds) {
+  this.bounds = bounds 
+  this.vranges = {xmin: 0, xmax: 1, ymin: 0, ymax: 1}   
+  this.targetScale = 30
+  this.samplingScale = 30
+  this.reducer = ee.Reducer.max
+}
+
+ScatterChart.prototype.getCorners = function() {
+  return {
+    ll: ee.List(ee.List(this.bounds.coordinates().get(0)).get(0)),
+    ur: ee.List(ee.List(this.bounds.coordinates().get(0)).get(2))
+  }
+}
+
+ScatterChart.prototype.getOrigin = function() {
+  var xy = this.getCorners().ll
+  return {x: ee.Number(xy.get(0)), y: ee.Number(xy.get(1))}
+}
+
+ScatterChart.prototype.getWidth = function() {
+  var v = this.getCorners()
+  return ee.Number(v.ur.get(0)).subtract(v.ll.get(0))
+}
+
+ScatterChart.prototype.getHeight = function() {
+  var v = this.getCorners()
+  return ee.Number(v.ur.get(1)).subtract(v.ll.get(1))
+}
+
+/***
+ * render
+ */
+ScatterChart.prototype.render = function(ic, region, axesBands, renderBands, vis) {
+  // grid
+  var grid = this.renderGrid()
+  
+  // area
+  var bg = ee.Image().int().paint(this.bounds, 1).visualize({palette:['000000'], opacity: 0.85, forceRgbOutput: true})
+
+  var wgs84 = ee.Projection('EPSG:4326');
+  
+  var w = this.getWidth()
+  var h = this.getHeight()
+
+  var origin = this.getOrigin()
+  
+  var vr = this.vranges
+  var xr = vr.xmax - vr.xmin
+  var yr = vr.ymax - vr.ymin
+  
+  var values = ic.getRegion(region, this.samplingScale).slice(1)
+
+  var bandNames = ee.Image(ic.first()).bandNames()
+  var bandX = axesBands[0]
+  var bandY = axesBands[1]
+  var indexX = bandNames.indexOf(bandX)
+  var indexY = bandNames.indexOf(bandY)
+
+  var features = values.map(function(o) {
+    o = ee.List(o).slice(4)
+    var vx = o.get(indexX)
+    var vy = o.get(indexY)
+      
+    // fix empty :(
+    vx = ee.Algorithms.If(ee.Algorithms.IsEqual(vx, null), 0, vx)
+    vy = ee.Algorithms.If(ee.Algorithms.IsEqual(vy, null), 0, vy)
+  
+    var x = ee.Number(vx).multiply(w).divide(xr).add(origin.x)
+    var y = ee.Number(vy).multiply(h).divide(yr).add(origin.y)
+    
+    var g = ee.Algorithms.GeometryConstructors.Point([x, y])
+
+    return ee.Feature(g, ee.Dictionary.fromLists(bandNames, o))
+  })
+  
+  features = ee.FeatureCollection(features)
+
+  function onlyUnique(v, i, s) { 
+    return s.indexOf(v) === i 
+  }
+  
+  var bandNamesUnique = axesBands.concat(renderBands).filter(onlyUnique)
+
+  var image = features
+    .reduceToImage(bandNamesUnique, this.reducer(bandNamesUnique.length).setOutputs(bandNamesUnique))
+    .reproject('EPSG:3857', null, this.targetScale) 
+    
+  var scatter = image.visualize(vis)
+  
+  return ee.ImageCollection.fromImages([
+    grid,
+    bg,
+    scatter
+  ]).mosaic()
+}
+
+/***
+ * render grid
+ */
+ScatterChart.prototype.renderGrid = function(visible) {
+  var ll = this.getCorners().ll
+  var origin = ee.Image.constant(ll.get(0)).addBands(ee.Image.constant(ll.get(1)))
+
+  var grid = ee.Image.pixelLonLat()
+    .subtract(origin)
+    .divide([this.getWidth(), this.getHeight()]).multiply([10, 10]).floor()
+    .toInt().reduce(ee.Reducer.sum()).bitwiseAnd(1)
+    .clip(this.bounds)
+  
+  return grid.visualize({min:0, max: 1, forceRgbOutput: true})
+}
+
+
+exports.ScatterChart = ScatterChart
+
+
+/***
+ * Experimental multiseries plot (as Map Layers)
+ * 
+ * TODO: merge with the Chart somehow
+ */
+
+/***
+ * A plot, consisting of a number of series, axes, frame, etc..
+ */
+function Plot(bounds, options) {
+  this.bounds = bounds
+  this.elements = [] // axis, grid, title, series, etc.
+
+  this.mapLayer = ui.Map.Layer()
+  
+  this.origin = this.getOrigin()
+  this.width = this.getWidth()
+  this.height = this.getHeight()
+  
+  this.xmin = 0
+  this.xmax = 1
+  this.ymin = 0
+  this.ymax = 1
+
+  this.area = (options && options.area) || { width: 1, color: '000000AA', fillColor: '00000055' }  
+
+  this.addDefaultElements()
+}
+
+Plot.prototype.setName = function(name) {
+  this.mapLayer.setName(name)
+}
+
+Plot.prototype.getMapLayer = function() {
+  return this.mapLayer  
+}
+
+Plot.prototype.setMinMax = function(xmin, xmax, ymin, ymax) {
+  this.xmin = ee.Number(xmin)
+  this.xmax = ee.Number(xmax)
+  this.ymin = ee.Number(ymin)
+  this.ymax = ee.Number(ymax)
+}
+
+Plot.prototype.getCorners = function() {
+  return {
+    ll: ee.List(ee.List(this.bounds.coordinates().get(0)).get(0)),
+    ur: ee.List(ee.List(this.bounds.coordinates().get(0)).get(2))
+  }
+}
+
+Plot.prototype.getOrigin = function() {
+  var xy = this.getCorners().ll
+  return {x: ee.Number(xy.get(0)), y: ee.Number(xy.get(1))}
+}
+
+Plot.prototype.getWidth = function() {
+  var v = this.getCorners()
+  return ee.Number(v.ur.get(0)).subtract(v.ll.get(0))
+}
+
+Plot.prototype.getHeight = function() {
+  var v = this.getCorners()
+  return ee.Number(v.ur.get(1)).subtract(v.ll.get(1))
+}
+
+Plot.prototype.getImage = function() {
+  var images = this.elements.map(function(e) { return e.image })
+  
+  var a = this.area
+  a.fillColor = '00000000'
+  images.push(ee.FeatureCollection([this.bounds]).style(a))
+  
+  return ee.ImageCollection(images).mosaic()
+}
+
+Plot.prototype.getThumbnail = function(params) {
+  return ui.Thumbnail(this.getImage().clip(this.bounds.buffer(1)), params)
+}
+
+Plot.prototype.refresh = function() {
+  var image = ee.Image()
+  
+  for(var i in this.elements) {
+    var element = this.elements[i]
+    //image = image.blend(element.image)
+    Map.addLayer(element.image, {}, element.name)
+  }
+  
+  var a = this.area
+  a.fillColor = '00000000'
+  Map.addLayer(ee.FeatureCollection([this.bounds]).style(a), {}, 'frame outline')
+  
+  
+  //image = image.clip(this.bounds.buffer(90))
+  
+  //this.mapLayer.setEeObject(image)
+}
+
+Plot.prototype.show = function() {
+  this.refresh()
+}
+
+Plot.prototype.addFeature = function(name, feature, style) {
+  var image = ee.FeatureCollection([feature]).style(style)
+  this.elements.push({ name: name, item: feature, style: style, image: image })
+}
+
+
+
+Plot.prototype.addDefaultElements = function() {
+  this.addFeature('frame', this.bounds, this.area)
+  
+  // this.addFeature('origin', ee.Geometry.Point([this.origin.x, this.origin.y]), { width: 3, color: 'ff0000' })
+  // this.addFeature('ur', ee.Geometry.Point([this.origin.x.add(this.width), this.origin.y.add(this.height)]), { width: 3, color: 'ff00ff' })
+}
+
+Plot.prototype.addRugSeries = function(name, values, style, opt_heightFractionMin, opt_heightFractionMax) {
+  var heightFractionMin = opt_heightFractionMin || 0
+  var heightFractionMax = opt_heightFractionMax || 1
+
+  var range = this.xmax.subtract(this.xmin).abs()
+  
+  var plot = this
+
+  var ticks = values.map(function(v) {
+    var xOffset = ee.Number(v).subtract(plot.xmin).divide(range).multiply(plot.width)
+    
+    var x0 = plot.origin.x.add(xOffset)
+    var y0 = plot.origin.y.add(plot.height.multiply(heightFractionMin))
+    
+    var x1 = plot.origin.x.add(xOffset)
+    var y1 = plot.origin.y.add(plot.height.multiply(heightFractionMax))
+    
+    var tick = ee.Feature(ee.Geometry.LineString([x0, y0, x1, y1]))
+    
+    return tick
+  })
+  
+  ticks = ee.FeatureCollection(ticks)
+  
+  var image = ticks.style(style)
+
+  this.elements.push({ name: name, item: values, style: style, image: image })
+  
+  //this.refresh()
+}
+
+/***
+ * Colorbar per image
+ */
+Plot.prototype.addColorbarSeries = function(name, images, region, vis, opt_scale, opt_numberOfSamples, opt_columnWidthFraction, opt_percentile, opt_hsvBand, opt_hsvBandSort) {
+  var plot = this
+
+  var xrange = this.xmax.subtract(this.xmin).abs()
+  var yrange = this.height
+  
+  var scale = opt_scale || 30
+  var columnWidthFraction = opt_columnWidthFraction || 200
+  var percentile = opt_percentile || 25
+  var hsvBand = opt_hsvBand || 'hue'
+  var hsvBandSort = typeof(opt_hsvBandSort) === undefined ? true : opt_hsvBandSort
+  
+  var colorbars = images.map(function(image) {
+    var t = ee.Number(image.get('system:time_start'))
+
+    var xOffset = t.subtract(plot.xmin).divide(xrange).multiply(plot.width)
+    
+    var x0 = plot.origin.x.add(xOffset)
+    var x1 = plot.origin.x.add(xOffset).add(plot.width.divide(columnWidthFraction))
+
+    var imageRGB = image.visualize(vis)
+    var imageHSV = imageRGB.unitScale(0, 255).rgbToHsv()
+    
+    var width = 1
+
+    var N = opt_numberOfSamples || 1000
+
+    var bands = ee.List(vis.bands).distinct()
+    
+    var samples = image.addBands(imageHSV).select(bands.cat([hsvBand]))
+        .sample({ 
+          region: region, 
+          scale: scale,
+          numPixels: N 
+        })
+
+    samples = samples.filter(ee.Filter.gt(bands.get(0), 0))
+    
+    //samples = samples.sort('hue')
+    samples = samples.sort(hsvBand, hsvBandSort)
+    //samples = samples.sort('NDVI')
+    //samples = samples.sort('MNDWI')
+    samples = samples.toList(N)
+    samples = samples.zip(ee.List.sequence(0, 1, ee.Number(1).divide(samples.length())))
+    
+    samples = samples.map(function(o) {
+      o = ee.List(o)
+      var f = ee.Feature(o.get(0))
+      var offset = ee.Number(o.get(1))
+    
+      var y0 = plot.origin.y.add(offset.multiply(yrange))
+      var y1 = y0
+      
+      var geom = ee.Geometry.LineString([x0, y0, x1, y1])//.buffer(scale * 2, scale)
+      
+      return f.setGeometry(geom)
+    })
+    
+    samples = ee.FeatureCollection(samples)
+    
+    var reducer = ee.Reducer.percentile([percentile]).forEach(bands)
+    //var reducer = ee.Reducer.mean().forEach(vis.bands)
+    
+    var samplesImage = samples.reduceToImage(bands, reducer)
+      .rename(bands)
+      // .convolve(ee.Kernel.gaussian(3, 2))
+    
+    return samplesImage.visualize(vis)
+      .set({ count: samples.size() })
+  })
+  
+  var image = colorbars.mosaic()
+
+  // add to plot
+  this.elements.push({ name: name, item: images, image: image })
+  
+  // this.refresh()
+}
+
+/***
+ * Colorbar per image
+ */
+Plot.prototype.addColorbarSeriesSingleBand = function(name, images, region, vis, opt_scale, opt_numberOfSamples, opt_columnWidthFraction, opt_percentile) {
+  var plot = this
+
+  var xrange = this.xmax.subtract(this.xmin).abs()
+  var yrange = this.height
+  
+  var scale = opt_scale || 30
+  var columnWidthFraction = opt_columnWidthFraction || 200
+  var percentile = opt_percentile || 25
+
+  var colorbars = images.map(function(image) {
+    var t = ee.Number(image.get('system:time_start'))
+
+    var xOffset = t.subtract(plot.xmin).divide(xrange).multiply(plot.width)
+    
+    var x0 = plot.origin.x.add(xOffset)
+    var x1 = plot.origin.x.add(xOffset).add(plot.width.divide(columnWidthFraction))
+
+    var imageRGB = image.visualize(vis)
+
+    var width = 1
+
+    var N = opt_numberOfSamples || 1000
+
+    var samples = image
+        .sample({ 
+          region: region, 
+          scale: scale,
+          numPixels: N,
+          dropNulls: true
+        })
+
+    samples = samples
+    
+    var bandName = image.bandNames().get(0)
+    
+    //samples = samples.sort('hue')
+    samples = samples.sort(bandName)
+    //samples = samples.sort('NDVI')
+    //samples = samples.sort('MNDWI')
+    samples = samples.toList(N)
+    samples = samples.zip(ee.List.sequence(0, 1, ee.Number(1).divide(samples.length())))
+    
+    samples = samples.map(function(o) {
+      o = ee.List(o)
+      var f = ee.Feature(o.get(0))
+      var offset = ee.Number(o.get(1))
+    
+      var y0 = plot.origin.y.add(offset.multiply(yrange))
+      var y1 = y0
+      
+      var geom = ee.Geometry.LineString([x0, y0, x1, y1])//.buffer(scale * 2, scale)
+      
+      return f.setGeometry(geom)
+    })
+    
+    samples = ee.FeatureCollection(samples)
+    
+    var reducer = ee.Reducer.percentile([percentile])
+    //var reducer = ee.Reducer.mean().forEach(vis.bands)
+    
+    var samplesImage = samples.reduceToImage([bandName], reducer)
+      .rename([bandName])
+      // .convolve(ee.Kernel.gaussian(3, 2))
+    
+    return samplesImage.visualize(vis)
+      .set({ count: samples.size() })
+  })
+  
+  var image = colorbars.mosaic()
+
+  // add to plot
+  this.elements.push({ name: name, item: images, image: image })
+  
+  // this.refresh()
+}
+
+Plot.prototype.getVLine = function(x) {
+  var xrange = this.xmax.subtract(this.xmin).abs()
+  var yrange = this.height
+
+  var xOffset = ee.Number(x).subtract(this.xmin).divide(xrange).multiply(this.width)
+    
+  var x0 = this.origin.x.add(xOffset)
+  var y0 = this.origin.y
+
+  var x1 = x0
+  var y1 = this.origin.y.add(yrange)
+  
+  return ee.Geometry.LineString([x0, y0, x1, y1])
+}
+
+exports.Plot = Plot
+
+
+// predefined plots
+exports.showTimesRugPlot = function(images, options) {
+  var rect = ee.Geometry.Rectangle({ coords: [[0, 0], [100, 4]], geodesic: false })
+    
+  var plot = new Plot(rect.bounds(), { 
+    area: { width: 1, color: '000000', fillColor: '00000011' }
+  })
+  
+  var times = ee.List(images.aggregate_array('system:time_start')).sort()
+  var tmin = times.get(0)
+  var tmax = times.get(-1)
+
+  if(options && options.tmin) {
+    tmin = options.tmin
+  }
+
+  if(options && options.tmax) {
+    tmax = options.tmax
+  }
+      
+  plot.setMinMax(tmin, tmax, 0, 1)
+      
+  plot.addRugSeries('rug plot', times, { width: 1, color: 'red' }, 1)  
+  print(plot.getThumbnail({ dimensions: '600x24'}))
+}
+

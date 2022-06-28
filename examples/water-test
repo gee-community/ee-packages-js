@@ -1,0 +1,49 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+
+Use the following reference to cite this algorithm: 
+
+  Donchyts, G, Planetary-scale surface water detection from space, Ph.D. thesis, Delft University of Technology, 2018
+  https://doi.org/10.4233/uuid:510bd39f-407d-4bb6-958e-dea363c5e2a8
+
+*/
+
+var water = require('users/gena/packages:water')
+
+// Map.setCenter(82.73, 21.726, 14)
+Map.setOptions('HYBRID')
+
+var region = Map.getBounds(true)
+var start = '2016-01-01'
+var stop = '2019-01-01'
+var palette = ["f7fbff","deebf7","c6dbef","9ecae1","6baed6","4292c6","2171b5","08519c","08306b"].reverse()
+var indexMin = -0.2
+var indexMax = 0.2
+
+var waterOccurrence = water.getWaterOccurrence(region, start, stop, indexMin, indexMax)
+
+// add composite median image as well
+var composite = ee.Image(waterOccurrence.get('WATER_COMPOSITE_MEDIAN'))
+Map.addLayer(composite, {min: 0, max: 0.5}, 'composite')
+
+// add black background
+Map.addLayer(ee.Image(1), { palette: ['000000'] }, 'black', true, 0.5)
+
+// add water occurrence computed on-the-fly
+Map.addLayer(waterOccurrence.mask(waterOccurrence.reduce(ee.Reducer.max()).multiply(2)), {min: 0, max: 1}, 'water occurrence (NDWI, NDVI, MNDWI')
+print('image count:', waterOccurrence.get('WATER_IMAGE_COUNT'))
+
+
+// add JRC water occurrence for a refference
+var waterOccurrence = ee.ImageCollection("JRC/GSW1_0/MonthlyHistory")
+  .map(function(i) {
+    i = i.unmask(0).resample('bicubic')
+    return i.eq(2).addBands(i.neq(0).rename('hasData'))
+  })
+  
+waterOccurrence = waterOccurrence.select('water').sum().divide(waterOccurrence.select('hasData').sum())
+
+Map.addLayer(waterOccurrence.mask(waterOccurrence.multiply(2)), {min: 0, max: 1, palette: palette}, 'water occurrence (JRC)', false)

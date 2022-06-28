@@ -1,0 +1,133 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var Slic = require('users/gena/packages:slic').Slic
+
+// ============ LANDSAT 8
+function slicExampleLandsat8() {
+  Map.setCenter(148.80, -34.94, 13) // Murrumbidgee
+  // Map.setCenter(-95.55, 35.79, 14) // US, Arkansas River
+  
+  // get the first image at map center
+  var l8 = ee.ImageCollection("LANDSAT/LC8_L1T_TOA");
+  
+  var image = ee.Image(l8.filterBounds(Map.getCenter()).first()).resample('bilinear')
+    .select(['B6', 'B5', 'B3'])
+    .rename(['v1','v2','v3']);
+  
+  Map.addLayer(image, {min: 0.03, max:0.5}, 'image')
+  var vis = {min: 0.03, max:0.5}
+  var compactness = 0.7 // TODO: compute this automatically. This parameters trades off color-similarity and proximity
+  var scaleFactor = 10
+
+  return {image: image, vis: vis, compactness: compactness, scaleFactor: scaleFactor}
+}
+
+
+// Sentinel-1
+function slicExampleSentinel1() {
+  var collection =  ee.ImageCollection('COPERNICUS/S1_GRD').filterBounds(Map.getCenter())
+    .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+    .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  
+  // A helper to apply an expression and linearly rescale the output.
+  var rescale = function(img, thresholds) {
+      return img.subtract(thresholds[0]).divide(thresholds[1] - thresholds[0]);
+  };
+
+  function rgb(img) {
+      var vv = img.select('VV');
+      var vh = img.select('VH');
+  
+      var r = rescale(vv, [-20, 0]);
+      var g = rescale(vv.add(vh).divide(2), [-25, -2]);
+      var b = rescale(vh, [-30, -5]);
+        
+      var result = ee.Image.cat(r, g, b);
+      
+      return result;
+  }
+
+  var image =  rgb(ee.Image(collection.first()))
+      .rename(['v1','v2','v3']);
+  
+  Map.addLayer(image, {}, 'Sentinel-1');
+  
+  image = image
+    .focal_median(20, 'circle', 'meters', 5)
+  
+  print(image)
+  
+  var vis = {min: 0, max:1.1}
+  var compactness = 4
+  var scaleFactor = 10
+
+  return {image: image, vis: vis, compactness: compactness, scaleFactor: scaleFactor}
+}
+
+// ============ Planet Labs
+function slicExamplePlanetLabs() {
+  var image = ee.Image('users/gena/PlanetLabs/20151107_200807_0b0a_analytic')
+    .select(['b1','b2','b3'])
+    .rename(['v1','v2','v3'])
+  Map.centerObject(image, 16)
+  Map.addLayer(image, {min:60, max:[900,900,1200], gamma:0.6})
+  var vis = {min: 60, max:[900,900,1100], gamma:0.6}
+  var compactness = 680.0
+  var scaleFactor = 10
+
+  return {image: image, vis: vis, compactness: compactness, scaleFactor: scaleFactor}
+}
+
+
+
+// ========= Terra Bella
+function slicExampleTerraBella() {
+  var images = ee.ImageCollection('SKYSAT/GEN-A/PUBLIC/ORTHO/MULTISPECTRAL');
+  
+  var image = ee.Image(images.filterBounds(Map.getBounds(true)).first())
+    .select(['R','G','B'])
+    .rename(['v1','v2','v3'])
+  
+  var id = 'SKYSAT/GEN-A/PUBLIC/ORTHO/MULTISPECTRAL/s02_20151221T120326Z';
+  
+  var image = ee.Image(id)
+    .select(['N','G','B'])
+    .rename(['v1','v2','v3'])
+  
+  Map.setCenter(-6.131250858306885, 40.32344859272024,17)
+  
+  print(image)
+  
+  var vis = {min:600, max:[2500,2500,6000], gamma: 1.2}
+  Map.addLayer(image, vis, 'TerraBella')
+  var compactness = 1000.0
+  var scaleFactor = 10
+
+  return {image: image, vis: vis, compactness: compactness, scaleFactor: scaleFactor}
+}
+
+// =========================== select example
+//var input = slicExampleTerraBella(); // Planet SkyBox
+//var input = slicExamplePlanetLabs();
+//var input = slicExampleSentinel1();
+var input = slicExampleLandsat8();
+
+// =========================== instantiate SLIC algorithm and compute superpixels
+print(Map.getCenter());
+//var debug = false;
+var debug = true;
+
+var slic = new Slic(input.image, input.scaleFactor, debug);
+slic.vis = input.vis;
+slic.compactness = input.compactness;
+print('Scale factor: ' + slic.scaleFactor);
+
+var results = slic.iterate(4);
+
+print(results.image)
+Map.addLayer(results.image, {bands: ['v1','v2','v3'], min: 0.03, max:0.5}, 'image (segmented)')

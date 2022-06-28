@@ -1,0 +1,124 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var modis = ee.ImageCollection("MODIS/MOD09GA"),
+    planet = ee.Image("users/gena/PlanetLabs/20161026_180025_0e1f_analytic"),
+    proba = ee.ImageCollection("VITO/PROBAV/S1_TOC_100M"),
+    s2 = ee.ImageCollection("COPERNICUS/S2"),
+    l8 = ee.ImageCollection("LANDSAT/LC8_L1T_TOA"),
+    geometryBounds = /* color: #d63000 */ee.Geometry.LineString(
+        [[-120.17592430114746, 39.39070333666375],
+         [-120.13378143310547, 39.37020340042263]]),
+    s1 = ee.ImageCollection("COPERNICUS/S1_GRD"),
+    geometryScalebar = /* color: #98ff00 */ee.Geometry.LineString(
+        [[-120.17446375016499, 39.34724146991185],
+         [-120.16955388813068, 39.34724149393274]]),
+    geometryLabel = /* color: #0b4a8b */ee.Geometry.Point([-120.17480850219727, 39.38984100112062]),
+    geometryDate = /* color: #d63000 */ee.Geometry.Point([-120.17463684082031, 39.38692224789837]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var text = require('users/gena/packages:text')
+var style = require('users/gena/packages:style')
+var text = require('users/gena/packages:text')
+var gallery = require('users/gena/packages:gallery')
+
+var imageModis = ee.Image(modis.filterDate('2016-08-03', '2016-08-10').toList(1, 0).get(0))
+
+imageModis = imageModis
+  .visualize({bands: ['sur_refl_b06', 'sur_refl_b02', 'sur_refl_b01'], min:200, max:8000})
+  .set('system:time_start', imageModis.get('system:time_start'))
+
+Map.addLayer(imageModis, {}, 'MODIS', false)
+
+var imagePlanet = planet.select(['b1', 'b2', 'b3']).mask(planet.select(0).gt(0))
+imagePlanet = imagePlanet
+  .visualize({min: [211, 400, 333], max: [795, 955, 661]})
+  .set('system:time_start', ee.Date.fromYMD(2016, 10, 26).millis())
+  
+Map.addLayer(imagePlanet, {}, 'Planet', false)
+
+var imageProba = ee.Image(proba.toList(1,6).get(0)).select(['SWIR', 'NIR', 'RED'])
+imageProba = imageProba
+  .visualize({min:5, max:500})
+  .set('system:time_start', imageProba.get('system:time_start'))
+  
+Map.addLayer(imageProba, {}, 'PROBA-V', false)
+
+var imageLandsat8 = ee.Image(l8.filterBounds(Map.getBounds(true)).toList(1,2).get(0)).select(['B6', 'B5', 'B3'])
+
+imageLandsat8 = imageLandsat8
+  .visualize({min:0.05, max:0.3})
+  .set('system:time_start', imageLandsat8.get('system:time_start'))
+  
+Map.addLayer(imageLandsat8, {}, 'Landsat 8', false)
+
+var imageSentinel1 = ee.Image(s1.filterBounds(ee.Geometry(Map.getBounds(true)).centroid(1))
+  .filter(ee.Filter.eq('resolution', 'H'))
+  .filter(ee.Filter.eq('transmitterReceiverPolarisation', ['VV', 'VH'])).toList(1,2).get(0))
+
+imageSentinel1 = imageSentinel1
+  .visualize({bands: ['VV', 'VV', 'VH'], min: -20, max: -5})
+  .set('system:time_start', imageSentinel1.get('system:time_start'))
+
+Map.addLayer(ee.Image(imageSentinel1), {}, 'Sentinel 1', false)
+
+var imageSentinel2 = ee.Image(s2.filterBounds(Map.getBounds(true)).toList(1,2).get(0)).select(['B11', 'B8', 'B3'])
+
+imageSentinel2 = imageSentinel2
+  .visualize({min:300, max:2500})
+  .set('system:time_start', imageSentinel2.get('system:time_start'))
+
+Map.addLayer(imageSentinel2, {}, 'Sentinel 2', false)
+
+var bg = ee.Image(1).clip(geometryBounds.bounds())
+bg = bg.mask(bg.mask().not())
+Map.addLayer(bg, {palette:['ffffff']}, 'white')
+
+// add image gallery
+var images = ee.ImageCollection.fromImages([
+  imageModis, imageProba, imageLandsat8,
+  imageSentinel1, imageSentinel2, imagePlanet
+  ])
+  
+var imageGallery = gallery.draw(images, geometryBounds.bounds(), 2, 3)
+Map.addLayer(imageGallery, {}, 'images')
+
+// add labels
+var labels = [
+  // 'MODIS Terra Surface Reflectance, [1628nm, 841nm, 620nm], 500m',
+  // 'PROBA-V top of cannopy [1570nm, 777nm, 610nm], 100m', 
+  // 'LANDSAT 8, top of atmosphere [swir1, nir, green], 30m',
+  // 'Sentinel-1 polarimetric, [VV, VV, VH], 10m', 
+  // 'Sentinel-2 top of atmosphere, [1610nm, 842nm, 560nm], 10m', 
+  // 'Planet, [610nm, 500nm, 420nm], 3m'
+
+  'MODIS Terra SR, 500m',
+  'PROBA-V TOC, 100m', 
+  'LANDSAT 8, TOA, 30m',
+  'Sentinel-1, 10m', 
+  'Sentinel-2 TOA, 10m', 
+  'Planet TOA, 3m'
+]
+
+var labelImages = ee.List(labels).map(function(label) {
+  return text.draw(label, geometryLabel, Map.getScale(), {
+      fontSize:32, textColor: 'ffffff', outlineColor: '000000', outlineWidth: 3, outlineOpacity: 0.6})
+})
+
+var labelGallery = gallery.draw(ee.ImageCollection.fromImages(labelImages), geometryBounds.bounds(), 2, 3)
+Map.addLayer(labelGallery, {}, 'labels')
+
+// add date
+var dateImages = images.map(function(i) {
+  return text.draw(i.date().format('YYYY-MM-dd'), geometryDate, Map.getScale(), {
+      fontSize:32, textColor: 'ffffff', outlineColor: '000000', outlineWidth: 3, outlineOpacity: 0.6})
+})
+
+var dateGallery = gallery.draw(dateImages, geometryBounds.bounds(), 2, 3)
+Map.addLayer(dateGallery, {}, 'dates')
+
+// add frame
+var frame = style.Frame.draw(geometryBounds.bounds(), {steps:5, size:4, format: '%.3f'})
+Map.addLayer(frame, {}, 'frame')
+
+// add scalebar
+var scale = style.Scalebar.draw(geometryScalebar, {steps:1, palette: ['5ab4ac', 'f5f5f5'], multiplier: 1, format: '%.0f', units: 'm'})
+Map.addLayer(scale, {}, 'scale')
+

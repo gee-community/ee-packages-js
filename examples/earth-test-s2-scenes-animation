@@ -1,0 +1,48 @@
+var animation = require('users/gena/packages:animation')
+var palettes = require('users/gena/packages:palettes')
+var earth = require('users/gena/packages:earth');
+
+Map.setCenter(4.83, -3.6, 3)
+Map.addLayer(ee.Image(1), { palette: ['black'] }, 'black', false)
+
+// parameters for orthographic projection
+var LON = -75.2;
+var LAT = 0;
+var SCALE = 0.5 * Map.getScale(); // this is the main parameter that controls scale of rendering, too small - EE will timout, too large - everything will look like a Minecraft (but faster, but SPI is still very slow)
+var ZOOM = 1; // earth zoom level
+
+var count = 10
+var frames = ee.List.sequence(1, count + 1)
+
+var images = ee.ImageCollection(frames.map(function(frame) {
+  // generate an image with Sentinel-2 footprints with a decaying opacity
+  var timeStart = ee.Date('2020-01-01')
+  var timeStop = timeStart.advance(frame, 'day')
+  var image = ee.ImageCollection('COPERNICUS/S2')
+    // .filter(ee.Filter.eq('SPACECRAFT_NAME', 'Sentinel-2A'))
+    .filterDate(timeStart, timeStop)
+    .map(function(i) { 
+      // decaying opacity based on the image date and start date
+      var opacity = ee.Number(count + 1).subtract(timeStop.difference(i.date(), 'day')).divide(count + 1).pow(5).multiply(255).int().format('%02x')
+      var fillColor = ee.Algorithms.If(ee.String(i.get('SPACECRAFT_NAME')).match('Sentinel-2A'), 'ffff00', '00ffff')
+      fillColor = ee.String(fillColor).cat(opacity)
+      return i.set({ style: { width: 0, fillColor: fillColor } })
+    })
+    .style({ styleProperty: 'style' })
+  
+  var ne = ee.Image("users/gena/NE1_HR_LC_SR_W").visualize({ gamma: 0.2 })
+
+  // compose footprints with Naturel Earth image  
+  image = ne.blend(image)
+  
+  // rotate Earth as well
+  var LON = ee.Number(-75.2).add(ee.Number(frame).multiply(1))
+  var LAT = 0
+  
+  return earth.getEarthImage(image, LON, LAT, SCALE, ZOOM).set({ label: timeStart.format('YYYY-MM-dd') })
+}))
+
+animation.animate(images, { 
+  position: 'bottom-center',
+  compact: true
+})

@@ -1,0 +1,21 @@
+var animation = require('users/gena/packages:animation')
+var gl = require('users/gena/packages:gl')
+
+var image = ee.Image(ee.ImageCollection('COPERNICUS/S2').filterBounds(Map.getCenter()).toList(1, 0).get(0))//.resample('bicubic')
+var vis = { min: 500, max: 5000, gamma: 1.4, bands: ['B12', 'B8', 'B4'] }
+
+Map.centerObject(image)
+
+// var image = ee.Image(ee.ImageCollection('LANDSAT/LC08/C01/T1_RT_TOA').filterBounds(Map.getCenter()).toList(1, 1).get(0))//.resample('bicubic')
+// var vis = { min: 0.0500, max: 0.5000, gamma: 1.4, bands: ['B6', 'B5', 'B4'] }
+
+var origin = Map.getCenter()
+var angles = ee.List.sequence(0, Math.PI * 2, Math.PI / 20)
+
+var images = angles.map(function(angle) {
+  return gl.rotateImage(image, origin, angle)
+})
+
+animation.animate(images, { vis: vis, maxFrames: 40 })
+
+

@@ -1,0 +1,39 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var origin = /* color: #d63000 */ee.Geometry.Point([-126.01318359375, 40.9964840143779]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var geometryUtils = require('users/gena/packages:geometry')
+
+// show origin
+Map.addLayer(origin, {color: 'green'}, 'origin')
+
+Map.centerObject(origin, 8)
+
+// length in degrees
+var angle = 45
+var length = 1 // degrees
+var vector = geometryUtils.createVector(origin, angle, length)
+Map.addLayer(vector, {color: 'blue'}, 'vector')
+
+// length in meters
+var angle = 180
+var length = 50000 // meters
+var vector = geometryUtils.createVector(origin.transform('EPSG:3857'), angle, length)
+Map.addLayer(vector, {color: 'green'}, 'vector')
+
+// animate
+var animation = require('users/gena/packages:animation')
+var length = 1 // degrees
+var lines = ee.List.sequence(0, 360, 10).map(function(a) {
+  var vector = geometryUtils.createVector(origin, a, length)
+  
+  return ee.Image().paint(vector, 1, 2).visualize({palette: ['ffff00']})
+})
+animation.animate(lines, {maxFrames: 37})
+

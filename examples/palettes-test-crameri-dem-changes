@@ -1,0 +1,96 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var dem = ee.Image("AHN/AHN2_05M_RUW"),
+    dem2 = ee.Image("users/gena/AHN3_DSM");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:palettes')
+var assets = require('users/gena/packages:assets')
+var animation = require('users/gena/packages:animation')
+
+Map.setOptions('HYBRID')
+// Map.setCenter(4.408241, 52.177595, 18)
+dem = dem.resample('bicubic')
+  .convolve(ee.Kernel.gaussian(0.5, 0.25, 'meters'))
+
+// var palette = palettes.crameri.lisbon[25]
+// palettes.showPalette('lisbon', palette)
+
+var palette = palettes.crameri.oleron[50]
+// palettes.showPalette('oleron', palette)
+
+// var palette = palettes.crameri.roma[25].slice(0).reverse()
+// palettes.showPalette('roma', palette)
+
+var demRGB = dem.visualize({ min: -5, max: 5, palette: palette })
+
+var weight = 0.5 // wegith of Hillshade vs RGB intensity (0 - flat, 1 - HS)
+var exaggeration = 25 // vertical exaggeration
+var azimuth = 315 // Sun azimuth
+var zenith = 15 // Sun elevation
+var brightness = -0.05 // 0 - default
+var contrast = 0.05 // 0 - default
+var saturation = 0.8 // 1 - default
+var castShadows = false
+
+// no shadows
+var rgb = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+Map.addLayer(rgb, {}, 'DEM (no shadows)', false)
+
+// with shadows
+var castShadows = true
+var rgb = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+Map.addLayer(rgb, {}, 'DEM')
+
+
+// with shadows (new)
+var demRGB2 = dem2.visualize({ min: -5, max: 5, palette: palette })
+var rgb2 = utils.hillshadeRGB(demRGB2, dem2, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+Map.addLayer(rgb2, {}, 'DEM2')
+
+// show changes
+var diff = dem2.subtract(dem)
+Map.addLayer(diff.mask(diff.abs().unitScale(0, 0.5)), { min: -0.5, max: 0.5, palette: palettes.cb.RdYlGn[5] }, 'changes', false)
+
+
+
+
+// animate 
+
+// Map.addLayer(dem, {}, 'DEM (raw)', false)
+
+/*
+var frames = ee.List.sequence(5, 90, 1).map(function(zenith) {
+  return utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+})
+
+
+var animation = require('users/gena/packages:animation')
+animation.animate(frames, { maxFrames: 90 })
+*/
+
+
+// show s2 images
+var images = assets.getImages(Map.getCenter(), { missions: ['S2'], resample: 'bicubic' })
+images = assets.getMostlyCleanImages(images, Map.getBounds(true), { cloudFrequencyThresholdDelta: 0.25})
+images = images.map(function(i) { return i.set({ label: i.date().format('YYYY-MM-dd') })})
+images = images.sort('system:time_start').distinct(['label'])
+print('Image count: ', images.size())
+// animation.animate(images, { vis: { min: 0.05, max: 0.45 }})
+
+
+// see https://www.ahn.nl/kwaliteitsbeschrijving for years
+
+// add water for AHN2 (2007)
+// var year1 = 2007 // Maasvlaakte
+var year1 = 2011 // Den Helder
+var images = assets.getImages(Map.getBounds(true), { missions: ['L7', 'L5'], filter: ee.Filter.date(year1 + '-01-01', (year1+2) + '-01-01'), resample: true })
+var water = images.select(['green', 'nir']).reduce(ee.Reducer.percentile([25])).normalizedDifference().unitScale(-0.05, 0.3)
+Map.addLayer(water.mask(water), { palette: palettes.cb.Greys[8].slice(4) }, 'water (AHN2)', false)
+
+
+// add water for AHN3 (2017)
+// var year2 = 2017 // Maasvlaakte
+var year2 = 2016 // Den Helder
+var images = assets.getImages(Map.getBounds(true), { missions: ['L8', 'S2'], filter: ee.Filter.date(year2 + '-01-01', (year2+1) + '-01-01'), resample: true })
+var water = images.select(['green', 'nir']).reduce(ee.Reducer.percentile([25])).normalizedDifference().unitScale(-0.05, 0.3)
+Map.addLayer(water.mask(water), { palette: palettes.cb.Greys[8].slice(4) }, 'water (AHN3)', false)

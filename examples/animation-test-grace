@@ -1,0 +1,35 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var grace_land = ee.ImageCollection("NASA/GRACE/MASS_GRIDS/LAND"),
+    grace_ocean = ee.ImageCollection("NASA/GRACE/MASS_GRIDS/OCEAN"),
+    swbd = ee.Image("MODIS/MOD44W/MOD44W_005_2000_02_24");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:colorbrewer').Palettes
+
+grace_land = grace_land.select('lwe_thickness_jpl').filterDate('2012-01-01', '2018-01-01')
+
+var images = grace_land.map(function(i) {
+  i = i.resample('bilinear')
+  
+  var rgb = i.visualize({ min: -10, max: 10, palette: palettes.RdYlBu[9] })
+
+  var weight = 1.5, height_multiplier = 50000, azimuth = 0, zenith = 30
+  var result = utils.hillshadeit(rgb, i, weight, height_multiplier, azimuth, zenith)
+    
+  return result
+    .updateMask(swbd.select('water_mask').eq(0))
+    //.updateMask(i.abs().divide(5))
+    .set({ label: i.date().format('YYYY-MM') })
+})
+
+Map.addLayer(ee.Image(1), {palette:['black']}, 'black', true, 0.9)
+animation.animate(images, {label: 'label', maxFrames: 50, opacity: 0.7, preload: false})
+

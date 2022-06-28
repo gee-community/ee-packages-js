@@ -1,0 +1,45 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var points = /* color: #20d61e */ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Point([-96.1252564709064, 44.93352129458624]),
+            {
+              "system:index": "0"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([5.354837331344804, 51.27681689672661]),
+            {
+              "system:index": "1"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([77.4251498313448, 20.778384499843177]),
+            {
+              "system:index": "2"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([21.350931081344804, 1.385987621723786]),
+            {
+              "system:index": "3"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-57.03678665478442, -7.468016025815568]),
+            {
+              "system:index": "4"
+            })]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var Earth = require('users/gena/packages:earth').Earth
+
+// INCOMPLETE
+
+// var earths = points.getInfo().features.map(function(pt) {
+//   var coords = pt.geometry.coordinates
+//   var scale = 25000
+//   var earth = new Earth(coords[0], coords[1], { scale: scale })
+//   var zoomMultiplier = 0.15
+
+//   return earth.getImageAt(ee.Geometry(pt.geometry), zoomMultiplier)
+// })
+
+// Map.addLayer(ee.Image(1), { palette: ['000000'] }, 'background', true, 0.5)
+
+// Map.addLayer(ee.ImageCollection(earths))
+

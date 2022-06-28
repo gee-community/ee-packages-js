@@ -1,0 +1,18 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var palettes = require('users/gena/packages:palettes')  
+
+// See http://colorbrewer2.org for a full list of palettes
+palettes.showPalette('Spectral', palettes.colorbrewer.Spectral[5])
+palettes.showPalette('RdYlGn', palettes.colorbrewer.RdYlGn[11].reverse())
+palettes.showPalette('Paired', palettes.colorbrewer.Paired[10])
+
+// See https://matplotlib.org/cmocean/ for a full list of palettes
+palettes.showPalette('Algae', palettes.cmocean.Algae[7])
+palettes.showPalette('Phase', palettes.cmocean.Phase[7])
+palettes.showPalette('Deep', palettes.cmocean.Deep[7])

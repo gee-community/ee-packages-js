@@ -1,0 +1,47 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var gradientBar = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[10.105460651028011, 47.25923211585435],
+          [10.105460651028011, 47.22817481400357],
+          [10.698464877712581, 47.22817481400357],
+          [10.698464877712581, 47.25923211585435]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var style = require('users/gena/packages:style')
+var palettes = require('users/gena/packages:palettes')
+
+style.SetMapStyleDark()
+
+var palette = palettes.cb.BrBG[11].reverse()
+
+Map.centerObject(gradientBar, 10)
+
+// sample some DEM points
+var table = ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').sample({region: Map.getBounds(true), scale: Map.getScale(), numPixels: 100, geometries: true })
+
+
+// add styled points
+var hist = style.Feature.histogram(table, 'MED', { palette: palette, pointSize: 10, width: 0 })
+Map.addLayer(hist, {}, 'styled')
+
+// add labels
+var textProperties = { textColor: 'ffffff', fontSize: 14, outlineColor: '000000', format: '%.1f' }
+Map.addLayer(style.Feature.label(table, 'MED', textProperties), {}, 'labels', false)
+
+// add gradient bar
+var min = ee.Number(hist.get('min'))
+var max = ee.Number(hist.get('max'))
+var step = max.subtract(min).divide(4)
+var labels = ee.List.sequence(min, max, step)
+var equidistantPalette = hist.get('equidistantPalette')
+
+var gradient = style.GradientBar.draw(gradientBar, {
+  min: min, max: max, palette: equidistantPalette, labels: labels, format: '%.1f', text: textProperties, scale: Map.getScale()
+})
+Map.addLayer(gradient, {}, 'gradient bar')

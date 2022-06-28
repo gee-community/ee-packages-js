@@ -1,0 +1,52 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var proba100 = ee.ImageCollection("VITO/PROBAV/C1/S1_TOC_100M"),
+    proba333 = ee.ImageCollection("VITO/PROBAV/C1/S1_TOC_333M");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var animation = require('users/gena/packages:animation')
+var assets = require('users/gena/packages:assets')
+
+var bounds = Map.getBounds(true)
+var scale = Map.getScale()
+var start = '2015-01-01'
+var stop = '2016-01-01'
+
+var images = proba100.merge(proba333)
+  .filterBounds(bounds)
+  .filterDate(start, stop)
+
+print(images.size())
+
+images = images.map(function(i) {
+  var isNonEmpty = i.select(0).reduceRegion({ reducer: ee.Reducer.anyNonZero(), geometry: bounds, scale: scale * 10 }).values().get(0)
+  
+  return i.set({ isNonEmpty: isNonEmpty })
+})
+
+images = images.filter(ee.Filter.eq('isNonEmpty', 1))
+
+print(images.size())
+
+images = assets.getMostlyCleanImages(images, bounds, {
+  qualityBand: 'RED'
+})
+
+print(images.size())
+
+var image = images
+  .map(function(i) { return i.resample('bicubic') })
+  .select(['RED'])
+  .reduce(ee.Reducer.percentile([3]))
+  .divide(2000)
+  .log()
+
+Map.addLayer(image, { min: -5, max: -2.5 }, 'percentile')
+
+throw(0)
+
+images = images.map(function(i) {
+  i = i.resample('bicubic').divide(2000)
+  
+  return i.addBands(i.select('BLUE').add(i.select('RED')).multiply(0.5).rename('GREEN')).log()
+})
+
+animation.animate(images, { vis: { bands: ['RED', 'GREEN', 'BLUE'], min: -5, max: -2.5 } })

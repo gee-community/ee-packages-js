@@ -1,0 +1,18 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var dem = ee.Image("USGS/SRTMGL1_003");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var palettes = require('users/gena/packages:palettes')
+
+// colorbrewer
+Map.addLayer(dem, {min: 0, max: 3000, palette: palettes.colorbrewer.Blues[9]}, 'colorbrewer Blues[9]')
+
+// cmocean
+Map.addLayer(dem, {min: 0, max: 3000, palette: palettes.cmocean.Algae[7]}, 'cmocean Algae[7]')
+

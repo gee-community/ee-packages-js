@@ -1,0 +1,76 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var images = ee.ImageCollection("LANDSAT/LC08/C01/T1_RT_TOA"),
+    geometry = /* color: #98ff00 */ee.Geometry.LineString(
+        [[77.32950479045007, 30.822360787673027],
+         [77.39644824196205, 30.884546299852897]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// Source: charting file in https://code.earthengine.google.com/?accept_repo=users/gena/packages 
+
+var region = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[77.4, 30.9],
+          [77.4, 30.8],
+          [77.515, 30.8],
+          [77.515, 30.9]]])
+
+Map.centerObject(geometry)
+
+region = region.buffer(-1700).bounds() // ee.ImageCollection.getRegion() crashes after ~75k points
+
+var bands = ['B5', 'B6']
+var min = 0.05
+var max = 0.45
+var vis = {min: min, max: max, bands: ['B6', 'B5', 'B6']}
+
+images = images
+  .filterBounds(region)
+  .filter(ee.Filter.lt('CLOUD_COVER', 50))
+  .sort('system:time_start')
+  .select(bands)
+  
+// draw scatter chart as a map layer
+var charting = require('users/gena/packages:charting')
+
+var chart = new charting.ScatterChart(geometry.bounds())
+chart.samplingScale = 90 // scale used to sample images
+chart.targetScale = Map.getScale() // scale used to draw points
+
+var axesBands = bands
+var renderBands = vis.bands
+
+// single chart
+function testSingleChart() {
+  Map.addLayer(region, {}, 'region')
+
+  var images2 = images.limit(2) // just two images
+
+  var chartImage = chart.render(images2, region, axesBands, renderBands, vis)
+  Map.addLayer(chartImage, {}, 'chart')
+  
+  Map.addLayer(images2.median().clip(region), vis, 'image')
+}
+
+// multiple charts
+function testMultipleCharts() {
+  var frames = images.map(function(i) {
+    var imageChart = chart.render(ee.ImageCollection.fromImages([i]), region, axesBands, renderBands, vis)
+    var imageRgb = i.visualize(vis)
+    
+    return ee.ImageCollection.fromImages([
+      imageRgb.clip(region),
+      imageChart
+    ]).mosaic()
+  })
+  
+  var animation = require('users/gena/packages:animation')
+  animation.animate(frames, {maxFrames: 30})
+}
+
+testSingleChart()
+//testMultipleCharts()

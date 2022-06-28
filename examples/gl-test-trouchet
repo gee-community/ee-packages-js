@@ -1,0 +1,91 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var land = ee.Image("users/gena/land_polygons_image");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// tutorial: https://youtu.be/2R7h76GoIJM
+
+Map.setCenter(78, 16, 6)
+// Map.setLocked(true)
+
+var gl = require('users/gena/packages:gl').init()
+
+function Hash21(p) {
+	p = gl.fract(p.multiply(gl.vec2(234.34, 436.345)))
+	p = p.add(gl.dot(p, p.add(34.23)))
+  
+  return gl.fract(p.select(0).multiply(p.select(1))).arrayFlatten([['x', 'y']]).select(0)
+}
+
+function render(time) {
+  var uv = gl.fragCoord.subtract(gl.iResolution.xy.multiply(0.5)).divide(gl.iResolution.y)
+  var UV = gl.fragCoord.divide(gl.iResolution.xy)
+
+  var col = ee.Image([0, 0, 0])
+
+  uv = uv.add(ee.Image.constant(time))
+
+  uv = uv.multiply(30)
+  
+  var gv = gl.fract(uv).subtract(0.5)
+  var id = uv.floor()
+  var n = Hash21(id)
+  var width = UV.select('y').multiply(0.2)
+  // var width = ee.Image(0.2)
+  gv = gv.where(n.lt(0.5), gv.multiply([-1, 1]))  
+  var gvs = gv.reduce(ee.Reducer.sum())
+  var d = gvs.abs().subtract(0.5).abs()
+  var cUv = gv.subtract(gl.sign(gvs.add(.001)).multiply(0.5))
+  d = gl.length(cUv)
+  var mask = gl.smoothstep(.01, -.01, d.subtract(0.5).abs().subtract(width))
+	var angle = cUv.select(0).atan2(cUv.select(1)) // -pi to pi
+  var checker = id.reduce(ee.Reducer.sum()).mod(2.0).abs().multiply(2).subtract(1)
+
+  var iTime = ee.Number(time)
+  var flow = checker.multiply(angle).multiply(10).add(iTime).sin()
+  
+  var x = gl.fract(angle.divide(1.57)).subtract(iTime.multiply(0.3))
+  var y = d.add(width.subtract(0.5)).divide(width.multiply(2))
+  y = y.subtract(0.5).abs().multiply(2)
+  var tUv = x.addBands(y)
+
+/*
+  gl.texture() is not implemented yet
+  
+  vec2 tUv = vec2(x, y);
+  col += texture(iChannel0, tUv).rgb*mask;
+*/
+
+  // col = col.add(checker)
+  // col = col.add(angle.multiply(checker).multiply(10).sin())
+  // col = col.add(x)
+  col = col.add(ee.Image(1).subtract(y))
+  // col = col.add(tUv.addBands(0))
+  col = col.multiply(mask)
+
+  // col = col.where(gv.select('x').gt(0.46).or(gv.select('y').gt(0.46)), ee.Image([1, 0, 0]))
+  
+  return col
+}
+
+// ==================================
+
+var image = render(0)
+
+var vis = { min: 0, max: 1 }
+
+Map.addLayer(image.updateMask(image.reduce(ee.Reducer.max())).updateMask(land.mask()), vis, 'image')
+Map.setOptions('SATELLITE')
+
+var dem = ee.Image("JAXA/ALOS/AW3D30/V2_2").select('AVE_DSM').multiply(10)
+Map.addLayer(ee.Terrain.hillshade(dem.add(dem.multiply(image.multiply(2))), 315, 25).updateMask(land.mask()), {}, 'dem', false)
+
+// not ready yet
+
+// var a = require('users/gena/packages:animation')
+// a.animate(ee.List.sequence(0, 10, 0.1).map(function(t) { 
+//   var i = render(t) 
+//   return i.updateMask(i.reduce(ee.Reducer.max())).updateMask(land.mask())
+// }), {
+//   vis: vis
+// })
+
+

@@ -1,0 +1,41 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+var palettes = require('users/gena/packages:colorbrewer').Palettes
+
+var collection = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG').select('avg_rad')
+  // .map(function(i) { return i.resample('bicubic')})
+
+
+var images = ee.List.sequence(2013, 2016).map(function(year) { 
+  return ee.List.sequence(1, 12).map(function(month) {
+    var begin = ee.Date.fromYMD(year, month, 1)
+    var end = begin.advance(6, 'month')
+    var image = collection.filterDate(begin, end).median()
+    
+    image = image
+      .where(image.lte(0), 0)
+      
+    image = image      
+      .mask(image.multiply(0.25))
+    
+    return image.visualize({
+        min: 0,
+        max: 35,
+        palette: palettes.YlOrRd[9].reverse()
+      }).set({ label: begin.format('YYYY-MM') })
+  })
+}).flatten()
+
+images = ee.ImageCollection(images)
+
+// print(images.aggregate_array('label'))
+Map.addLayer(ee.Image(1), {palette:['black']}, 'black', true, 0.9)
+animation.animate(images, {label: 'label', maxFrames: 50, opacity: 0.7})
+
+

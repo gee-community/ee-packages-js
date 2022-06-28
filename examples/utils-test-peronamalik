@@ -1,0 +1,14 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var s1 = ee.ImageCollection("COPERNICUS/S1_GRD");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var utils = require('users/gena/packages:utils')
+
+var image = s1.filterBounds(Map.getCenter()).first()
+
+Map.addLayer(image, { bands: ['VV', 'VH', 'VV'], min: -30, max: -5 })
+
+var image2 = utils.peronaMalikFilter(image, 20, 2.5, 2)
+
+Map.addLayer(image2, { bands: ['VV', 'VH', 'VV'], min: -30, max: -5 })
+
+

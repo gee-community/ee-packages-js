@@ -1,0 +1,17 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+
+var assets = require('users/gena/packages:assets')
+
+var images = assets.getImages(Map.getCenter()).limit(10)
+
+var info = assets.getImageInfo(images)
+
+print(info)
+
+

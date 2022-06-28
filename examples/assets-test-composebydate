@@ -1,0 +1,35 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var images = ee.ImageCollection("COPERNICUS/S2"),
+    geometry = 
+    /* color: #7c89d6 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-85.173178950396, 38.90067265484757],
+          [-85.173178950396, 38.25222180232338],
+          [-84.1459572707085, 38.25222180232338],
+          [-84.1459572707085, 38.90067265484757]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+images = images
+  .filterBounds(geometry)
+  .filterDate('2019-01-01', '2020-01-01')
+
+print(images.size())
+
+Map.addLayer(images.select('B1').count(), { min: 71, max: 583, palette: ['black', 'red']}, 'count')
+
+print(ui.Chart.feature.histogram(images.map(function(i) { return i.set({doy: i.date().getRelative('day', 'year') }) }), 'doy', 150))
+
+// merge by date
+var assets = require('users/gena/packages:assets')
+
+images = assets.composeByDate(images)
+
+print(images.size())
+
+Map.addLayer(images.select('B1').count(), { min: 71, max: 583, palette: ['black', 'red']}, 'count (after mosaic)')
+
+print(ui.Chart.feature.histogram(images.map(function(i) { return i.set({doy: i.date().getRelative('day', 'year') }) }), 'doy', 150))

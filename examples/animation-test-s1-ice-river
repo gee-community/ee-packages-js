@@ -1,0 +1,90 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Point([-118.19064684851986, 55.92195209221348]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/ 
+
+var animation = require("users/gena/packages:animation")
+
+// Map.centerObject(geometry, 9)
+
+var mode = 'IW'
+var bands = 'VV'
+
+var start = '2019-01-01'
+var end = '2020-01-01'
+
+var vmin = -23.0;
+var vmax =  3.0;
+
+var palette = [
+  '#030512',
+  '#0e1023',
+  '#1b1a36',
+  '#26244a',
+  '#302e5f',
+  '#383874',
+  '#3c4288',
+  '#3e4f9b',
+  '#3e5da8',
+  '#3e6cb1',
+  '#427ab7',
+  '#4887bc',
+  '#5295c0',
+  '#5da3c5',
+  '#6ab1cb',
+  '#7abed0',
+  '#8ccbd5',
+  '#a3d7dc',
+  '#bce3e6',
+  '#d4f0f2'
+]
+
+var images = ee.ImageCollection('COPERNICUS/S1_GRD')
+  .filterBounds(geometry)
+  
+print(images.aggregate_array('instrumentMode'))
+print(images.aggregate_array('transmitterReceiverPolarisation'))
+  
+images = images  
+  .filterMetadata('instrumentMode', 'equals', mode)
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', bands))
+  .filterDate(start, end)
+  .filterBounds(geometry)
+
+var images_asc = images.filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+var images_desc = images.filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+
+images = images_asc
+//images = images_desc
+
+
+var duration = 6
+var imagesComposite = ee.List.sequence(0, 120, duration).map(function(t) {
+  var t0 = ee.Date(start).advance(t, 'day')
+  var t1 = ee.Date(start).advance(t, 'day').advance(duration, 'day')
+  var results = images.filterDate(t0, t1)
+    
+  return results.max().set({ count: results.size(), 'system:time_start': t0.millis() })
+}).filter(ee.Filter.gt('count', 0))
+
+imagesComposite = ee.ImageCollection(imagesComposite)
+
+function visualize(image) {
+    // var rgb = ee.Image(10.0).pow(image.divide(10.0))
+    //   .visualize({ bands: bands, min: 0, max: 1, palette: palette })
+
+    var rgb = image
+      .visualize({ bands: bands, min: vmin, max: vmax, palette: palette })
+
+    return rgb.set({label: ee.Date(image.get('system:time_start')).format("YYYY-MM-dd")})
+};
+
+var video = imagesComposite.map(visualize)
+print(video.first())
+
+animation.animate(video, { maxFrames: 50, label: 'label' })

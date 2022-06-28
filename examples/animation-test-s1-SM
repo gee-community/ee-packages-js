@@ -1,0 +1,43 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var s1 = ee.ImageCollection("COPERNICUS/S1_GRD");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+function toNatural(i) {
+  return ee.Image(ee.Image.constant(10.0).pow(i.divide(10.0)).copyProperties(i, ['system:time_start']));
+}
+
+// var mode = 'IW'
+var mode = 'SM'
+
+s1 = s1
+  .filterBounds(Map.getBounds(true))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', mode))
+
+Map.addLayer(s1.count().mask(s1.count()), {min:0, max: 10}, 'count', false)
+print(s1.size())
+
+function show(image) {
+  var vh = image.select('VH')
+  var vv = image.select('VV')
+  
+  image = toNatural(image)
+  
+  image = image.addBands(image.normalizedDifference(['VH', 'VV']).rename('VH/VV'))
+  
+  //image = image.visualize({min: [0.03, 0.01, -0.6], max: [0.15, 1, 0.1], gamma: 2.5, bands: ['VH', 'VV', 'VH/VV']})
+  image = ee.Image([vh, vv, image.select('VH/VV')]).visualize({min: [-20, -20, -0.6], max: [-5, -5, 0.1], gamma: 1.5, bands: ['VH', 'VV', 'VH/VV']})
+  
+  return image
+}
+
+var animation = require('users/gena/packages:animation')
+
+s1 = s1
+  .sort('system:time_start')
+  .sort('orbitProperties_pass')
+
+var images = s1.map(show)
+
+animation.animate(images)
+

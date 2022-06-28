@@ -1,0 +1,384 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Point([-126.002197265625, 43.00062985445005]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+/***
+ * Computes standard deviation ellipse as in https://desktop.arcgis.com/en/arcmap/10.3/tools/spatial-statistics-toolbox/h-how-directional-distribution-standard-deviationa.htm
+ */
+function standardDeviationEllipse(points) {
+  var coordinates = ee.Array(points.geometry().coordinates())
+
+  var mean = coordinates.reduce(ee.Reducer.mean(), [0])
+  
+  var center = ee.Geometry.Point(mean.toList().get(0))
+  
+  var n = points.size()
+  var deviations = coordinates.subtract(mean.repeat(0, n))
+  var sde = deviations.pow(2).reduce(ee.Reducer.sum(), [0]).divide(n).sqrt()
+  
+  var a = deviations.pow(2).reduce(ee.Reducer.sum(), [0]).multiply([[1, -1]]).reduce(ee.Reducer.sum(), [1]).get([0, 0])
+  
+  var deviationsX = deviations.slice(1, 0, 1)
+  var deviationsY = deviations.slice(1, 1, 2)
+  
+  var sumCross = deviationsX.multiply(deviationsY).reduce(ee.Reducer.sum(), [0])
+  var b = sumCross.pow(2).multiply(4).get([0, 0]).add(a.pow(2)).sqrt()
+  
+  var c = sumCross.multiply(2).get([0, 0])
+  
+  var angle = a.add(b).divide(c).atan()
+  
+  var sigmaX = deviationsX.multiply(ee.Array([[angle.cos()]]).repeat(0, n))
+    .subtract(deviationsY.multiply(ee.Array([[angle.sin()]]).repeat(0, n))).pow(2)
+    .reduce(ee.Reducer.sum(), [0]).divide(n).sqrt().multiply(ee.Number(2).sqrt()).get([0, 0])
+  
+  var sigmaY = deviationsX.multiply(ee.Array([[angle.sin()]]).repeat(0, n))
+    .add(deviationsY.multiply(ee.Array([[angle.cos()]]).repeat(0, n))).pow(2)
+    .reduce(ee.Reducer.sum(), [0]).divide(n).sqrt().multiply(ee.Number(2).sqrt()).get([0, 0])
+  
+  // define rotation matrix
+  var cosa = angle.cos()
+  var sina = angle.sin()
+  var mRotate = ee.Array([
+    [cosa, sina.multiply(-1)], 
+    [sina, cosa]
+  ])
+  
+  var mScale = ee.Array([
+    [sigmaY, 0], 
+    [0, sigmaX]
+  ])
+  
+  // scale and rotate 
+  var circle = center.buffer(1, null, ee.Projection('EPSG:4326'))
+
+  var coords = ee.Array(circle.coordinates().get(0))
+
+  coords = coords.subtract(mean.repeat(0, coords.length().get([0])))
+
+  var coordsNew = mRotate.matrixMultiply(
+      mScale.matrixMultiply(coords.transpose())
+    ).transpose().add(mean.repeat(0, coords.length().get([0])))
+    
+  var geom = ee.Geometry.Polygon(coordsNew.toList())
+  
+  return ee.Feature(geom, {
+      centerX: mean.get([0, 0]),
+      centerY: mean.get([0, 1]),
+      sigmaX: sigmaX,
+      sigmaY: sigmaY,
+      angle: angle
+    }
+  )
+}
+
+/***
+ * Creates transect in the middle of line geometry
+ */
+function createTransectAtCentroid(line, length, crs, maxError) {
+  if(typeof(crs) == 'undefined') {
+    crs = 'EPSG:3857'
+  }
+  
+  if(typeof(maxError) == 'undefined') {
+    maxError = 1
+  }
+  
+  line = ee.Geometry(line).transform(crs, maxError)
+  var origin = line.centroid(maxError, crs)
+  
+  length = ee.Number(length)
+
+  // compute angle from two points
+  var coords = line.coordinates()
+  var pt0 = coords.slice(0, 1)
+  var pt1 = coords.slice(-1)
+  var delta = ee.Array(pt1).subtract(pt0)
+  var dx = delta.get([0, 0])
+  var dy = delta.get([0, 1])
+  var angle = dx.atan2(dy).add(Math.PI / 2)
+  
+  var ptOrigin = ee.Array([origin.coordinates()]).transpose()
+  
+  // get coordinates as a list
+  var proj1 = origin.projection().translate(length.multiply(-0.5), 0)
+  var pt1 = ee.Array([origin.transform(proj1).coordinates()]).transpose()
+
+  // translate
+  var proj2 = origin.projection().translate(length.multiply(0.5), 0)
+  var pt2 = ee.Array([origin.transform(proj2).coordinates()]).transpose()
+  
+  // define rotation matrix
+  var cosa = angle.cos()
+  var sina = angle.sin()
+  var M = ee.Array([
+    [cosa, sina.multiply(-1)], 
+    [sina, cosa]
+  ])
+
+  // rotate
+  pt1 = M.matrixMultiply(pt1.subtract(ptOrigin)).add(ptOrigin)
+  pt2 = M.matrixMultiply(pt2.subtract(ptOrigin)).add(ptOrigin)
+
+  // get points
+  pt1 = pt1.transpose().project([1]).toList()
+  pt2 = pt2.transpose().project([1]).toList()
+  
+  // construct line
+  var line = ee.Algorithms.GeometryConstructors.LineString([pt1, pt2], ee.Projection(crs))
+
+  return line
+}
+
+// arrow
+function createVector(origin, angle, length) {
+  // get coordinates as a list
+  var pt1 = ee.Array([ee.Feature(origin).geometry().coordinates()]).transpose()
+
+  // translate
+  var proj = origin.projection().translate(length, 0)
+  var pt2 = ee.Array([origin.transform(proj).coordinates()]).transpose()
+  
+  // define rotation matrix
+  angle = ee.Number(angle).multiply(Math.PI).divide(180)
+  var cosa = angle.cos()
+  var sina = angle.sin()
+  var M = ee.Array([
+    [cosa, sina.multiply(-1)], 
+    [sina, cosa]
+  ])
+
+  // rotate
+  pt2 = M.matrixMultiply(pt2.subtract(pt1)).add(pt1)
+
+  // get end point  
+  pt2 = pt2.transpose().project([1]).toList()
+  
+  // construct line
+  var line = ee.Algorithms.GeometryConstructors.LineString([origin, pt2], origin.projection())  
+
+  return line
+}
+
+/*** 
+ * Computes angle from two points
+ */
+
+function angle(pt0, pt1) {
+  pt0 = ee.List(pt0)
+  pt1 = ee.List(pt1)
+  
+  var x0 = ee.Number(pt0.get(0))
+  var x1 = ee.Number(pt1.get(0))
+  var y0 = ee.Number(pt0.get(1))
+  var y1 = ee.Number(pt1.get(1))
+
+  var dy = y1.subtract(y0)
+  var dx = x1.subtract(x0)
+  
+  return dy.atan2(dx) // (-PI, PI]
+}
+
+
+
+/***
+ * Computes center point (not centroid)
+ */
+function getCenterPoint(geom, scale) {
+  // hangle multi-polygons properly, take center of the largerst polygon
+  var features = geom.geometries().map(function(g) { 
+    return ee.Feature(ee.Geometry(g))
+      .set({ area: ee.Geometry(g).area(scale) }) 
+  })
+  var parts = ee.FeatureCollection(features).sort('area', false)
+  geom = ee.Geometry(ee.Feature(parts.first()).geometry())
+
+  var exterior = ee.Geometry.LineString(geom.coordinates().get(0))
+  
+  var distance = ee.Image(0).float().paint(exterior, 1)
+      .fastDistanceTransform().sqrt()
+      
+  var distanceMax = distance.reduceRegion(ee.Reducer.percentile([99]), geom, scale).values().get(0)
+  
+  var coords = distance.addBands(ee.Image.pixelLonLat()).updateMask(distance.gte(ee.Image.constant(distanceMax)))
+    .reduceRegion(ee.Reducer.firstNonNull(), geom, scale)
+
+  return ee.Geometry.Point([coords.get('longitude'), coords.get('latitude')])
+}
+
+function maxAngle(a, b, c) {
+  a = ee.Number(a)
+  b = ee.Number(b)
+  c = ee.Number(c)
+  
+  var angle = ee.List([
+    b.pow(2).add(c.pow(2)).subtract(a.pow(2)).divide(b.multiply(c).multiply(2)).acos(),
+    a.pow(2).add(c.pow(2)).subtract(b.pow(2)).divide(a.multiply(c).multiply(2)).acos(),
+    a.pow(2).add(b.pow(2)).subtract(c.pow(2)).divide(a.multiply(b).multiply(2)).acos()
+  ]).reduce(ee.Reducer.max())
+  
+  return ee.Number(angle).multiply(180 / Math.PI)
+}
+
+function concaveHull(points, scale) {
+  scale = ee.Number(scale)
+
+  var minAngle = 90
+  var maxSearchRadius = scale.multiply(100)
+  var e = scale.multiply(1)
+  
+  function computeCocaveHull(points, previous) {
+    var inner = points.filterBounds(previous.buffer(e.multiply(-1), e))
+    
+    var coords = ee.List(previous.coordinates().get(0))
+    var coords2 = coords.slice(1)
+    var edgeCoords = coords.zip(coords2)
+
+    var triangles = edgeCoords.map(function(pair) {
+      pair = ee.List(pair)
+      var p1 = ee.Algorithms.GeometryConstructors.Point(pair.get(0))
+      var p2 = ee.Algorithms.GeometryConstructors.Point(pair.get(1))
+      var edge = ee.Algorithms.GeometryConstructors.LineString(pair)
+      
+      var l = edge.length()
+      
+      // digging
+      var nearest = inner.filterBounds(edge.buffer(maxSearchRadius, e))
+        .map(function(pt) {
+          var d1 = pt.distance(p1)
+          var d2 = pt.distance(p2)
+          
+          var a = maxAngle(d1, d2, l)
+
+          var triangle = ee.FeatureCollection([edge, pt]).geometry().convexHull()
+
+          var valid = d1.max(d2).lt(l).and(inner.filterBounds(triangle.buffer(e.multiply(-1))).size().eq(0))
+
+          return ee.Feature(triangle).set({a: a, d1: d1, d2: d2, l: l, d: d1.min(d2), valid: valid})
+        }).filter(ee.Filter.eq('valid', 1)).filter(ee.Filter.gt('a', minAngle)).sort('d').limit(1)
+      
+      return nearest
+    })
+
+    triangles = ee.FeatureCollection(ee.FeatureCollection(triangles).flatten())
+
+    return previous.difference(triangles)
+  }
+  
+  var iterations = 5
+  
+  var results = ee.List.sequence(0, iterations).iterate(function(c, p) {
+    return computeCocaveHull(points, ee.Geometry(p))
+  }, points.geometry().convexHull())
+  
+  return ee.Geometry(results)
+}
+
+function explodeLineString(lineString, props) {
+  var length = lineString.length()
+
+  if(!props) {
+    throw('Specify either count or step')
+  }
+
+  var offsets
+  if(props.count) {
+    offsets = ee.List.sequence(0, length, length.divide(props.count))
+  } else {
+    offsets = ee.List.sequence(0, length, props.step)
+  }
+  
+  var segments = lineString.cutLines(offsets)
+  
+  segments = segments.geometries().zip(offsets).map(function(o) {
+    o = ee.List(o)
+    var g = ee.Geometry(o.get(0))
+    var l = o.get(1)
+    
+    return ee.Feature(g, {offset: ee.Number(l)})
+  })
+  
+  var last = ee.Feature(segments.get(-1))
+  last = ee.Feature(ee.Geometry.Point(last.geometry().coordinates().get(-1)), { offset: length })
+  
+  segments = ee.FeatureCollection(segments)
+  
+  // take first point
+  var points = segments.map(function(f) {
+    return ee.Feature(ee.Geometry.Point(f.geometry().coordinates().get(0)), { offset: f.get('offset') })
+  })
+  
+  points = points.merge(ee.FeatureCollection(last))
+  
+  return { points: points, segments: segments }
+}
+
+
+function getSize(geom, crs, maxError) {
+  if(typeof(crs) == 'undefined') {
+    crs = 'EPSG:4326'
+  }
+  if(typeof(maxError) == 'undefined') {
+    maxError = 0.001  
+  }
+  var coords = ee.List(geom.bounds(maxError, crs).coordinates().get(0))
+  var ll = ee.List(coords.get(0))
+  var ur = ee.List(coords.get(2))
+  var width = ee.Number(ur.get(0)).subtract(ll.get(0))
+  var height = ee.Number(ur.get(1)).subtract(ll.get(1))
+
+  return ee.Dictionary({ width: width, height: height })
+}
+
+function getGlobalGeometry() {
+  return ee.Geometry.Polygon([[180,85],[0,85],[-180,85],[-180,-85],[0,-85],[180,-85],[180,85]], 'EPSG:4326', false)
+}
+
+function fromGeoJSON(geojson) {
+  var features = ee.FeatureCollection(geojson.features)
+
+  // copy all properties from geojson except type and name
+  Object.keys(geojson).map(function(p) {
+    if(p == 'type' || p == 'features') {
+      return
+    }
+    
+    features = features.set(p, geojson[p])
+  })
+
+  return features
+}
+
+exports.fromGeoJSON = fromGeoJSON
+
+function fromGeoJSONScript(path) {
+  var geojson = require(path).geojson
+  
+  return fromGeoJSON(geojson)
+}
+
+exports.fromGeoJSONScript = fromGeoJSONScript
+
+
+/*
+exports.concaveHull = concaveHull
+
+var convex = points.geometry().convexHull()
+Map.addLayer(convex, {color: 'white'}, 'convexHull')
+
+var concave = concaveHull(points, Map.getScale())
+Map.addLayer(concave, {color: 'black'}, 'concaveHull')
+*/
+exports.getGlobalGeometry = getGlobalGeometry
+exports.createVector = createVector
+exports.getCenterPoint = getCenterPoint
+exports.explodeLineString = explodeLineString
+exports.angle = angle
+exports.getSize = getSize
+exports.createTransectAtCentroid = createTransectAtCentroid
+exports.standardDeviationEllipse = standardDeviationEllipse

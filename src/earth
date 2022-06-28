@@ -1,0 +1,95 @@
+var web = ee.Projection('EPSG:3857')
+
+function ortho(lon, lat) {
+  var str = ee.String('PROJCS["unnamed",GEOGCS["WGS 84",DATUM["unknown",SPHEROID["WGS84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Orthographic"],')
+  .cat('PARAMETER["latitude_of_origin",')
+  .cat(ee.Number(lat).format('%.1f'))
+  .cat('],PARAMETER["central_meridian",')
+  .cat(ee.Number(lon).format('%.1f'))
+  .cat('],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["Meter",1]]')
+
+  return str
+}
+
+function getEarthImage(image, lon, lat, scale, zoom, opt_showCenter, opt_reproject) {
+  var proj = ortho(lon, lat)
+  
+  if(opt_showCenter) {
+    image = image.blend(getCenterImage(lon, lat))
+  }
+  
+    return image
+      .reproject(ee.Projection('EPSG:4326').atScale(scale))
+      .reproject(proj, null, scale)
+      .changeProj(proj, web.scale(zoom, zoom))
+      .set({ label: ee.Number(lon).format('%.1f').cat(', ').cat(ee.Number(lat).format('%.1f')) })
+}
+
+function getCenterImage(lon, lat) {
+  return ee.FeatureCollection([ee.Geometry.Point([lon, lat]).buffer(500000)])
+    .style({ color: 'ff0000', fillColor: 'ff000033', width: 2 })
+}
+
+function Earth(lon, lat, options) {
+  var scale = 50000
+  var zoom = 3
+  var showCenter = false
+  
+  if(options) {
+    scale = options.scale || 50000
+    zoom = options.zoom || 3
+    
+    if(typeof(options.showCenter) != undefined) {
+      showCenter = options.showCenter
+    }
+  }
+  
+  var ne = ee.Image("users/gena/NE1_HR_LC_SR_W")
+
+  var reproject = true
+  
+  var earthImage = getEarthImage(ne, lon, lat, scale, zoom, showCenter, reproject)
+  
+  var thumb = ui.Thumbnail(earthImage)
+  
+  thumb.style().set({
+    position: 'bottom-right',
+    width: '250px',
+    height: '250px',
+    // backgroundColor: '#00000011',
+    // border: '1px none',
+    backgroundColor: '00000000',  
+    border: '0px none',
+    padding: '0px',
+    margin: '0px'
+  })
+  
+  thumb.setCenter = function(lon, lat) {
+    thumb.setImage(getEarthImage(ne, lon, lat, scale, 3, true))
+  }
+  
+  thumb.getImageAt = function(pt, options) {
+    options = ee.Dictionary(options)
+    zoom = ee.Number(options.get('zoom', 1))
+
+    zoom = zoom.multiply(0.1)
+    
+
+    var proj = ee.Projection('EPSG:3857')
+    var coords = pt.transform(proj).coordinates()
+
+    var image = thumb.getImage()
+      .changeProj(proj, proj.translate(coords.get(0), coords.get(1)).scale(zoom, zoom))
+      .clip(pt.buffer(ee.Number(20000000).multiply(zoom), 100000))
+      
+    return image
+  }
+  
+  this.thumb = thumb
+  
+  return thumb
+}
+
+exports.Earth = Earth
+
+exports.getEarthImage = getEarthImage

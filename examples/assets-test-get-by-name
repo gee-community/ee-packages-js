@@ -1,0 +1,20 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var assets = require('users/gena/packages:assets')
+
+var city = assets.getCity('Paris')
+
+var country = assets.getCountry('Belgium')
+
+var river = assets.getRiver('Rhine')
+
+Map.addLayer(river, {color: 'blue'}, river)
+Map.addLayer(city, {color: 'blue'}, city)
+Map.addLayer(country, {color: 'blue'}, country)
+
+Map.centerObject(river, 6)

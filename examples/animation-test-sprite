@@ -1,0 +1,20 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+
+var scale = Map.getScale()
+var bounds = Map.getBounds(true)
+var maxFrames = 30
+var getGlyph = animation.getGlyph({ scale: scale, bounds: bounds, frameCount: maxFrames })
+
+var images = ee.List.sequence(0, maxFrames).map(getGlyph)
+
+animation.animate(images, { maxFrames: maxFrames, position: 'bottom-center', timeStep: 50 })
+
+
+

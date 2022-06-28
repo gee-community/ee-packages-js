@@ -1,0 +1,54 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometryGradientBar = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-104.93453767982349, 39.73211681120685],
+          [-104.93453767982349, 39.731357722492966],
+          [-104.90874555793629, 39.731357722492966],
+          [-104.90874555793629, 39.73211681120685]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var palettes = require('users/gena/packages:palettes')
+var style = require('users/gena/packages:style')
+var utils = require('users/gena/packages:utils')
+
+// INCOMPLETE
+// TODO: add scale, make it work for thumbnails as well
+
+Map.centerObject(geometryGradientBar)
+Map.addLayer(ee.Image(1), { palette: ['000000'] }, 'black', true, 0.5)
+
+// Paired
+var palette = palettes.crameri.roma[50].slice(25)
+
+var min = 0
+var max = 80
+
+print(Map.getScale())
+
+// add a gradient bar
+var labels = ee.List.sequence(min, max, (max-min)/5)
+
+// var rect = ee.Geometry.Rectangle({ coords: [[0, 0], [100, 4]], geodesic: false })
+
+var textProperties = { fontSize:16, textColor: '000000', outlineColor: 'ffffff', outlineWidth: 2, outlineOpacity: 0.6 }
+
+var gradientBar = style.GradientBar.draw(geometryGradientBar, {
+  min: min, max: max, palette: palette, labels: labels, format: '%.0f', text: textProperties
+})
+
+Map.addLayer(gradientBar)
+
+// print(ui.Thumbnail(gradientBar.clip(rect.buffer(1000000)), { dimensions: '600x24'}))
+
+// var m = ui.Map(0, 0)
+
+// Map.add(m)
+// m.centerObject(rect)
+// m.addLayer(gradientBar)
+

@@ -1,0 +1,18 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// source code for the grid package: https://code.earthengine.google.com/?accept_repo=users/gena/packages
+
+var g = require('users/gena/packages:grid')
+
+// vector grid
+var gridVector = g.generateGrid(-180, -50, 180, 50, 10, 10, 0, 0)
+Map.addLayer(gridVector, {}, 'grid vector')
+
+// raster grid
+var gridRaster = g.generateRasterGrid(ee.Geometry.Point(0, 0), 10, 10, ee.Projection('EPSG:4326'))
+Map.addLayer(gridRaster.select('id').randomVisualizer(), {}, 'grid raster')

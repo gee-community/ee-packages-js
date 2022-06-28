@@ -1,0 +1,26 @@
+var cloudUtils = require('users/gena/packages:cloud-utils')
+
+var testimage = ee.Image('LANDSAT/LC8_L1T_TOA/LC81680742014018LGN00');
+Map.addLayer(testimage, {bands: ['B5', 'B4', 'B3'], max: 1}, 'TOA');
+
+var cloudScore = ee.Algorithms.Landsat.simpleCloudScore(testimage).select('cloud');
+var cloudMask = cloudScore.gt(40).reproject(ee.Projection('EPSG:3857').atScale(30));
+
+Map.addLayer(cloudMask.mask(cloudMask),{palette:['fb8072']},'Cloud');
+
+var sunElevation = testimage.get('SUN_ELEVATION');
+print(sunElevation);
+var sunAzimuth = ee.Number(testimage.get('SUN_AZIMUTH'));
+print(sunAzimuth);
+var cloudshadows = cloudUtils.computeCloudShadowMask(sunElevation,sunAzimuth,cloudMask);
+
+// remove dark pixels 
+var irSumThresh = 0.35;//Sum of IR bands to include as shadows within TDOM and the shadow shift method (lower number masks out less)
+var darkPixels = testimage.select(['B5','B6','B7']).reduce(ee.Reducer.sum()).lt(irSumThresh)
+  // .focal_min(contractPixels).focal_max(dilatePixels)
+
+Map.addLayer(cloudshadows.mask(cloudshadows.and(darkPixels)), {palette:['ffffb3']}, 'Cloudshadows');
+
+
+  
+  

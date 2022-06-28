@@ -1,0 +1,32 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var font = ee.Image("users/gena/fonts/Arial24");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+Map.setCenter(0, -20, 4)
+
+// make sure we will scale font to show on our map with 1:1 scale
+var proj = font.projection()
+var scale = proj.nominalScale().multiply(Map.getScale())
+var projTarget = proj.scale(scale, scale.multiply(-1))
+
+// show bitmap font
+Map.addLayer(font.changeProj(proj, projTarget))
+
+// clip and translate a single character
+    // return ee.Image(glyph).changeProj(proj, proj.translate(xpos, ypos).scale(scale, scale))
+
+var coords = ee.Image.pixelCoordinates(projTarget);
+// var nxy = ll.floor().round().changeProj(ll.projection(), image.projection());
+// var nx = nxy.select(0);
+// var ny = nxy.select(1);
+// var mask = nx.gte(xmin).and(nx.lt(xmax)).and(ny.gte(ymin)).and(ny.lt(ymax));
+    
+// return image.mask(mask).translate(ee.Number(xmin).multiply(-1).add(x), ee.Number(ymin).multiply(-1).subtract(y));
+
+var nx = 1
+var ny = 5
+var size = 32
+var xy = coords.round()
+var x = xy.select(0)
+var y = xy.select(1)
+var mask = x.gte(size * nx).and(x.lt(size * (nx + 1))).and(y.gte(size * ny)).and(y.lt(size * (ny + 1)))
+Map.addLayer(mask.selfMask(), { palette: ['yellow' ] }, 'char', true, 0.8)

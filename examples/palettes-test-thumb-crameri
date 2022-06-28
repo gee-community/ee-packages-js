@@ -1,0 +1,25 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var palettes = require('users/gena/packages:palettes')  
+
+// see http://www.fabiocrameri.ch/colourmaps.php for docs on these palettes
+
+// 10, 25, 50 versions are supported
+palettes.showPalette('oleron 10', palettes.crameri.oleron[10])
+palettes.showPalette('oleron 25', palettes.crameri.oleron[25])
+palettes.showPalette('oleron 50', palettes.crameri.oleron[50])
+
+// show all
+var paletteNames = ['acton', 'bamako', 'batlow', 'berlin', 'bilbao',
+  'broc', 'buda', 'cork', 'davos', 'devon', 'grayC', 'hawaii', 'imola',
+  'lajolla', 'lapaz', 'lisbon', 'nuuk', 'oleron', 'oslo', 'roma', 'tofino',
+  'tokyo', 'turku', 'vik']
+
+paletteNames.forEach(function(palette) {
+  palettes.showPalette(palette, palettes.crameri[palette][50])
+})

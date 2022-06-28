@@ -1,0 +1,4 @@
+var features = require('users/gena/packages:geometry-test-geojson').getFeatures()
+
+Map.addLayer(features)
+Map.centerObject(features, 15)

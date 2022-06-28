@@ -1,0 +1,53 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var pt = /* color: #d63000 */ee.Geometry.Point([-68.83521740840641, 34.08885648046128]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var Earth = require('users/gena/packages:earth').Earth
+
+var earth = new Earth(10, 10/*, { scale: 10000 }*/)
+
+var a = require('users/gena/packages:animation')
+
+// Map.addLayer(earth.getImageAt(pt)) 
+
+
+// var images = ee.List.sequence(0.0, Math.PI, Math.PI / 20).map(function(i) { return earth.getImageAt(pt, { zoom: ee.Number(i).sin().multiply(0.1).add(0.5) })})
+// a.animate(images)
+
+
+// https://www.desmos.com/calculator/19ua52oivv
+var heartbeat = ee.List.sequence(-2, 2, 0.1).map(function(x) {
+  x = ee.Number(x)
+  
+  var a = 0.2
+  var d = 1.4
+  var h = 3
+  var s = 0.04
+  var w = 0.02
+  
+  return x.add(d).pow(2).multiply(-1).divide(2*w).exp()
+  .add(x.subtract(d).pow(2).multiply(-1).divide(2*w).exp())
+  .add(x.divide(s).multiply(-1).add(h).subtract(x).multiply(x.multiply(7).pow(2).divide(-2).exp())).multiply(a)
+})
+
+var images = heartbeat.map(function(v) { 
+  return earth.getImageAt(pt, { zoom: ee.Number(v).sin().multiply(0.1).add(0.5) })
+})
+
+a.animate(images, { maxFrames: images.size() })
+
+
+// thumbnail is a little bit more complicated
+// var images = heartbeat.map(function(v) { 
+//   var i = earth.getImageAt(pt, { zoom: ee.Number(v).sin().multiply(0.1).add(0.5) })
+//   return i.mask().select(0).not().visualize({ palette: ['white']}).blend(i.visualize())
+// })
+
+
+// // Define arguments for animation function parameters.
+// var videoArgs = {
+//   dimensions: 500,
+//   framesPerSecond: 10,
+//   min: 0, max: 255
+// };
+
+// print(ui.Thumbnail(ee.ImageCollection(images), videoArgs))

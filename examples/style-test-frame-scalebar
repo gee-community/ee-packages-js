@@ -1,0 +1,37 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometryFrame = /* color: #d63000 */ee.Geometry.LineString(
+        [[-120.1959228515625, 36.559325329091834],
+         [-118.28704833984375, 37.77400521704548]]),
+    geometryScalebar = /* color: #98ff00 */ee.Geometry.LineString(
+        [[-118.70452880859375, 36.62214102821768],
+         [-118.4490966796875, 36.622141028217705]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+Map.centerObject(geometryFrame, 9)
+
+var style = require('users/gena/packages:style')
+
+Map.setOptions(null, {'Publish': [{featureType: 'all', stylers: [{ color: '#ffffff'}]}]})
+Map.addLayer(ee.Image(1), {palette:['ffffff'], opacity: 0.85}, 'white')
+
+var image = ee.ImageCollection('LANDSAT/LC8_L1T_TOA').filterBounds(geometryFrame).filterDate('2015-05-01', '2015-11-01').median()
+Map.addLayer(image.clip(geometryFrame.bounds()), {bands: ['B6', 'B5', 'B3'], min: 0.03, max:0.3}, 'image')
+
+var textProperties = { 
+  fontSize: 24, textColor: '000000',
+  marginLeft: 25, marginRight: 10, marginTop: 10, marginBottom: 10
+}
+var frame = style.Frame.draw(geometryFrame.bounds(), {
+    left: true, right: true, top: true, bottom: true,
+    steps:5, size: 5,  text: textProperties, format: '%.1f'
+})
+Map.addLayer(frame, {}, 'frame')
+
+var scalebar = style.Scalebar.draw(geometryScalebar, {steps: 3, palette: ['5ab4ac', 'f5f5f5']})
+Map.addLayer(scalebar, {}, 'scalebar')

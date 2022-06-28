@@ -1,0 +1,30 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var uiTools = require('users/gena/packages:ui')
+
+var tool = new uiTools.DrawTransectTool(Map)
+
+tool.onDraw(function(points) {
+  print(points)
+})
+
+
+// ui
+var button = ui.Button('Start Drawing')
+
+button.onClick(function() { 
+  if(!tool.active) {
+    tool.startDrawing() 
+    button.setLabel('Stop Drawing')    
+  } else {
+    tool.stopDrawing()
+    button.setLabel('Start Drawing')
+  }
+})
+
+Map.add(button)

@@ -1,0 +1,71 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var points = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Point([-149.19870133078322, 34.947115160827344]),
+            {
+              "system:index": "0"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-148.51754898703322, 34.459390634049505]),
+            {
+              "system:index": "1"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-147.90231461203322, 33.16322994946134]),
+            {
+              "system:index": "2"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-148.64938492453322, 33.95057552851489]),
+            {
+              "system:index": "3"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-148.69333023703322, 33.749845332622115]),
+            {
+              "system:index": "4"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-148.57248062765822, 35.10006199788487]),
+            {
+              "system:index": "5"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-148.36374039328322, 33.512011620307085]),
+            {
+              "system:index": "6"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-147.11129898703322, 32.70218567549612]),
+            {
+              "system:index": "7"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-145.99069351828322, 31.996818829698]),
+            {
+              "system:index": "8"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-149.50631851828322, 36.215841038948135]),
+            {
+              "system:index": "9"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([-146.86959976828322, 33.38367564024694]),
+            {
+              "system:index": "10"
+            })]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var g = require('users/gena/packages:geometry')
+
+var ellipse = g.standardDeviationEllipse(points)
+
+Map.centerObject(points)
+
+print(ellipse)
+
+Map.addLayer(points)
+Map.addLayer(ellipse, { color: 'green' })

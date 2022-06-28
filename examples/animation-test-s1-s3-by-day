@@ -1,0 +1,223 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.MultiPoint(),
+    viirs = ee.ImageCollection("NOAA/VIIRS/001/VNP09GA"),
+    s3 = ee.ImageCollection("COPERNICUS/S3/OLCI");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+var palettes = require('users/gena/packages:colorbrewer').Palettes
+var thresholding = require('users/gena/packages:thresholding')
+
+var bounds = ee.Geometry(Map.getBounds(true))
+var scale = Map.getScale()
+
+// skip partial
+function addAllNonZero(i) { 
+  return i.set('all', i.select(0).mask().reduceRegion(ee.Reducer.allNonZero(), bounds, scale).values().get(0))
+}
+
+
+var band1 = 'VH'
+var band2 = 'VV'  
+var mode = 'IW'
+
+// var band1 = 'HH'
+// var band2 = 'HV'  
+// var mode = 'IW'
+
+// var band1 = 'HH'
+// var band2 = 'HV'  
+// var mode = 'SM'
+
+var tStart = ee.Date.fromYMD(2021, 7, 10)
+var days = 20
+var step = 1
+var w = 2
+var opacityWindow = 1
+
+//var filterBounds = false
+var filterBounds = true
+
+var s1 = ee.ImageCollection("COPERNICUS/S1_GRD")
+
+// show number of images for every day
+// print(ee.List.sequence(1, days, step).map(function(d) { 
+//   var t1 = tStart.advance(d, 'day')
+//   var t2 = t1.advance(step, 'day')
+  
+//   return t1.format('YYYY-MM-dd').cat(': ').cat(s1.filterDate(t1, t2).filterBounds(bounds).size().format('%d'))
+// }))
+
+var images = s1
+  .filterDate(tStart.advance(-w, 'day'), tStart.advance(days, 'day'))
+  //.filterDate('2016-01-01', '2018-01-01')
+if(filterBounds)   {
+  images = images
+    .filterBounds(bounds)
+}
+
+images = images
+  //.map(addAllNonZero).filter(ee.Filter.eq('all', 1))
+  .sort('system:time_start')
+  
+// print(images.size())  
+// print(images.first())
+
+images = images
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', band1))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', band2))
+  
+// median
+var min = -20, max = -5
+var min = 0, max = 0.25
+var bandNames = ee.Image(images.first()).bandNames()
+
+var images_asc = images
+  .filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+  
+var images_desc = images  
+  .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+
+images  = images
+  // Filter to get images collected in interferometric wide swath mode.
+  //.filter(ee.Filter.eq('instrumentMode', mode))
+
+var s1 = images
+
+// images = images_asc
+// images = images_desc
+
+// print(images.size())  
+
+function resample(image) {
+  return image.resample('bilinear')
+}
+
+var median_asc = images_asc.map(resample).map(toNatural).reduce(ee.Reducer.median()).rename(bandNames)
+Map.addLayer(median_asc, {min: min, max: max, bands: [band2, band2, band1]}, 'median (asc)', false)
+
+var median_desc = images_desc.map(resample).map(toNatural).reduce(ee.Reducer.median()).rename(bandNames)
+Map.addLayer(median_desc, {min: min, max: max, bands: [band2, band2, band1]}, 'median (desc)', false)
+
+
+var dem = ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic')
+Map.addLayer(ee.Terrain.hillShadow(dem, 315, 0), {}, 'ALOS (hillshade)', false)
+
+var p = [0, 30, 70]
+var percentiles = toNatural(images.select(band1).reduce(ee.Reducer.percentile(p)))
+Map.addLayer(percentiles, {min: min, max: max}, 'percentiles', false)
+
+s3 = s3
+  .filterBounds(bounds)
+  .select(['Oa21_radiance', 'Oa18_radiance', 'Oa06_radiance'])
+
+// by date
+var images = ee.ImageCollection(ee.List.sequence(1, days, step).map(function(d) {
+  var t1 = tStart.advance(d, 'day').advance(-w, 'day')
+  
+  var t2 = tStart.advance(d, 'day')
+  
+  // limit geometry 
+  var i = s1.filterDate(t1.advance(-w, 'day'), t2)
+  var g = i.geometry()
+
+  // limit images to step
+  var i = s1.filterDate(t1, t2)
+  
+  i = i.map(function(ii) {
+    var f = ii.date().difference(t1, 'day').divide(w)
+    //var m = ee.Image.constant(f.add(opacityWindow).min(1)).pow(2)
+    var m = ee.Image.constant(f.multiply(2).subtract(1).pow(2).multiply(-1).add(1).pow(5))
+    
+    return ii.updateMask(m)
+  })  
+
+  
+  i = ee.Image(ee.Algorithms.If(i.size().eq(0), ee.Image.constant([0, 0]).rename([band1, band2]).mask(0), i.min()))
+  
+  var date = t1.format('YYYY-MM-dd')
+  
+  var min = -20, max = -5
+  var min = 0.03, max = [0.2, 0.6, 0.2]
+  
+  var image = toNatural(i)
+  var output = image
+    .visualize({min: min, max: max, bands: [band2, band2, band1], gamma: 1.6})
+    
+  var viirsImage = viirs.filterDate(t1, t2.advance(1, 'day')) 
+    .select(['I1', 'I2', 'I3']).reduce(ee.Reducer.percentile([5]))
+    .visualize({min:300, max:10000})
+
+  var s3Images = s3.filterDate(t1, t2)//.sort('system:time_start', false)
+
+  var s3Image = s3Images
+  
+  .map(function(ii) {
+      var f = ii.date().difference(t1, 'day').divide(w)
+      //var m = ee.Image.constant(f.add(opacityWindow).min(1)).pow(2)
+      var m = ee.Image.constant(f.multiply(2).subtract(1).pow(2).multiply(-1).add(1).pow(5))
+      
+      return ii.updateMask(m)
+    })  
+  
+    //.median()
+    
+    .mosaic()
+    //.reduce(ee.Reducer.percentile([5]))
+    
+  s3Image = ee.Algorithms.If(
+    s3Images.size().gt(0), 
+    s3Image.multiply(ee.Image.constant([0.00876539, 0.0123538, 0.0115198])),
+    s3Image
+  )
+    
+  s3Image = ee.Image(s3Image)
+    .visualize({min: 0.5, max: 5, gamma: 1.9 })
+    
+  var footprints = ee.Image().paint(g, 1, 1)
+    .visualize({ palette: ['ffffff'], opacity: 0.5 })    
+  
+  // return s3Image
+
+  return viirsImage
+  //   .blend(s3Image)
+
+    // .blend(output)
+  // 
+  // return output  
+  
+    
+    //.blend(footprints)
+    .set({label: t1.format('YYYY-MM-dd')})
+}))
+
+print(images.size())
+
+var params = {
+  crs: 'EPSG:3857',
+  framesPerSecond: 8,
+  region: Map.getBounds(true),
+  dimensions: 512
+};
+
+print(images.getVideoThumbURL(params))
+
+animation.animate(images, {label: 'label', maxFrames: Math.min(Math.floor(days / step), 100)})
+
+// export video
+// var utils = require('users/gena/packages:utils')
+// utils.exportVideo(images, {bounds: bounds, label: 'label', maxFrames: 600, name: 'animation', label: 'label' })
+
+
+
+// Functions to convert from dB
+function toNatural(i) {
+  return ee.Image(ee.Image.constant(10.0).pow(i.divide(10.0)).copyProperties(i, ['system:time_start']));
+}
+

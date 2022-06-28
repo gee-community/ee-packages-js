@@ -1,0 +1,62 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// https://code.earthengine.google.com/?accept_repo=users/gena/packages
+
+var assets = require('users/gena/packages:assets')
+var animation = require('users/gena/packages:animation')
+var gallery = require('users/gena/packages:gallery')
+
+var region = Map.getCenter().buffer(Map.getScale() * 50).bounds()
+Map.addLayer(region, {}, 'area of intereset')
+
+// get all images over region
+var images = assets.getImages(region, { 
+  filterMasked: true,
+  missions: ['S2', 'L8'] 
+})
+.filterDate('2016-01-01', '2017-01-01')
+  
+print('image count: ', images.size())
+
+// add cuatom quality band used to determine cloudiness over the region
+images = images.map(function(i) {
+  var q = i.select('green').add(i.select('swir')).rename('q')
+  return i.addBands(q)
+})
+
+// add a very simple quality score (uses regional percentile of a green band by default)
+var cloudOptions = {scale: Map.getScale() * 5, percentile: 85, cloudFrequencyThresholdDelta: 0.05, qualityBand: 'q'}
+images = assets.addQualityScore(images, region, cloudOptions)
+
+function visualize(i) {
+  return i.visualize({ min: 0.03, max: 0.4 })
+}
+
+var rgbAll = images
+  .sort('quality_score')
+  .map(visualize)
+
+// show 
+var imagesAll = gallery.draw(rgbAll, region, 10, 10)
+Map.addLayer(imagesAll, {}, 'images (all)')
+
+// now remove cloudy ones (currently works fine only for annual collections
+// uses cloud frequency from http://www.earthenv.org/cloud
+var images = assets.getMostlyCleanImages(images, region, cloudOptions)
+
+print('image count (clean): ', images.size())
+
+var rgbLessClouds = images
+  .sort('quality_score')
+  .map(visualize)
+
+// show
+var imagesClean = gallery.draw(rgbLessClouds, region, 10, 10)
+Map.addLayer(imagesClean, {}, 'images (clean)')
+
+

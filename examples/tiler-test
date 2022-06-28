@@ -1,0 +1,26 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[-67.93074032573043, 35.46981488813701],
+          [-66.1536238287353, 36.01338228347171],
+          [-64.93898700752635, 35.870247281896674],
+          [-61.918402961316474, 35.690906512945844],
+          [-59.34915548456843, 32.86102419342828],
+          [-58.55125375004707, 38.53920148140564],
+          [-66.19887770267769, 37.7113914931089],
+          [-67.16182659937084, 35.90904830460234],
+          [-70.46072436226257, 35.5795448698411],
+          [-70.7905135321381, 32.96740553173804],
+          [-68.40946373914267, 30.78468785606502]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var tiler = require('users/gena/packages:tiler')
+
+Map.centerObject(geometry)
+
+function addTileBounds(zoom) {
+  var tiles = tiler.getTilesForGeometry(geometry, zoom)
+  
+  Map.addLayer(tiles.style({ width: Math.max(1, 10 - zoom), fillColor: '00000022' }), {}, 'tiles ' + zoom)
+  Map.addLayer(tiles, {}, 'tiles (features)' + zoom, false) // for inspection
+}
+
+[6, 7, 8, 9, 10].map(addTileBounds)

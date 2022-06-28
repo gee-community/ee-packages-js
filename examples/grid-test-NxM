@@ -1,0 +1,15 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[-64.92167968749999, 34.655531078083555],
+          [-66.67949218749999, 28.906915730294664],
+          [-61.34013671874999, 30.982034292755003]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var grid = require('users/gena/packages:grid')
+
+var nx = 10
+var ny = 10
+var g = grid.generateGridForGeometryN(geometry, nx, ny)
+
+Map.addLayer(g.map(function(i) { return i.centroid() }), {}, 'grid 10x10')
+
+

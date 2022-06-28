@@ -1,0 +1,83 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var point = /* color: #98ff00 */ee.Geometry.Point([-120.14626979827881, 39.382543889164005]),
+    box = /* color: #5cb451 */ee.Geometry.LineString(
+        [[-120.12531653117071, 39.360917651511265],
+         [-120.06206799560834, 39.40429581166964]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// Repository: https://code.earthengine.google.com/?accept_repo=users/gena/packages
+// File: charting-test-radiance-reflectance
+
+Map.centerObject(box)
+
+var charting = require('users/gena/packages:charting')
+
+var bands = ['red', 'green', 'blue', 'nir', 'swir1']
+  
+var assetsReflectance = [
+  { id: 'LANDSAT/LC8_L1T_TOA', bands: ['B2', 'B3', 'B4', 'B5', 'B6'], multiplier: 1 },
+  { id: 'LANDSAT/LE7_L1T_TOA', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1 },
+  { id: 'LANDSAT/LT5_L1T_TOA', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1 },
+  { id: 'LANDSAT/LT4_L1T_TOA', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1 }
+]
+
+var assetsRadiance = [
+  { id: 'LANDSAT/LC8_L1T', bands: ['B2', 'B3', 'B4', 'B5', 'B6'], multiplier: 1/65535 },
+  { id: 'LANDSAT/LE7_L1T', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1/255 },
+  { id: 'LANDSAT/LT5_L1T', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1/255 },
+  { id: 'LANDSAT/LT4_L1T', bands: ['B1', 'B2', 'B3', 'B4', 'B5'], multiplier: 1/255 }
+]
+
+function plotAssets(assets, name, bounds) {
+  // initialize collections
+  var collections = assets.map(function(asset, ic) {
+    return ee.ImageCollection.load(asset.id).select(asset.bands, bands).map(function(i) { return i.multiply(asset.multiplier) })
+  })
+  
+  // merge collections
+  var collection = ee.List(collections).iterate(function(c, p) {
+    return ee.ImageCollection(p).merge(c)
+  }, ee.ImageCollection([]))
+  collection = ee.ImageCollection(collection)
+  
+  // get images
+  collection = collection
+    .filterBounds(point)
+    //.filterDate('2000-01-01', '2018-01-01')
+  
+  // add first image
+  var image = ee.Image(collection.toList(1,2).get(0))
+
+  Map.addLayer(image, {bands: ['swir1', 'nir', 'green'], min:0, max:0.5}, 'first image', false)
+  
+  // sample locations around given point
+  var radius = 120
+  var samplingArea = point.buffer(radius)
+  Map.addLayer(samplingArea, {color:'grey'}, 'sampling area')
+  
+  // add scatter chart
+  var chart = new charting.ScatterChart(bounds);
+  
+  chart.targetScale = Map.getScale()
+  var axesBands = ['green', 'swir1']
+  var renderBands = ['swir1', 'nir', 'green']
+  var chartImage = chart.render(collection, samplingArea, axesBands, renderBands, {bands: renderBands, min:0, max:0.5})
+  Map.addLayer(chartImage, {}, 'green vs swir1 ' + name, false)
+  
+  var axesBands = ['green', 'nir']
+  var renderBands = ['red', 'green', 'nir']
+  var chartImage = chart.render(collection, samplingArea, axesBands, renderBands, {bands: renderBands, min:0, max:0.5})
+  Map.addLayer(chartImage, {}, 'green vs nir ' + name)
+}
+
+var box2 = ee.Geometry.LineString(box.bounds().transform(box.projection().translate(-0.065,0), 1).coordinates().get(0))
+
+plotAssets(assetsRadiance, 'radiance', box.bounds())
+
+plotAssets(assetsReflectance, 'reflectance', box2.bounds())

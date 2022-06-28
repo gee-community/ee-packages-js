@@ -1,0 +1,35 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// repository: https://code.earthengine.google.com/?accept_repo=users/gena/packages
+// source: utils-test-hexgrid
+
+var utils = require('users/gena/packages:utils')
+
+var scale = Map.getScale()
+var crs = 'EPSG:3857'
+
+// generate seeds using a hexagonal grid (crs and scale are optional)
+var size = 35 // in scale points
+var grid = utils.generateHexagonalSeeds(size, crs, scale).focal_max(2)
+
+// distance from seed points
+var distance = grid.fastDistanceTransform().sqrt()
+
+// compute grid edges using SNIC
+var clusters = ee.Algorithms.Image.Segmentation.SNIC({
+  image: ee.Image(1), 
+  seeds: grid,
+  compactness: 1,
+  connectivity: 8,
+  neighborhoodSize: 256
+}).select('clusters')
+
+Map.addLayer(clusters.randomVisualizer(), {}, 'clusters')
+
+Map.addLayer(ee.Image(1).mask(distance.divide(size).pow(6)), {palette: ['000000']}, 'grid (edges)')
+Map.addLayer(grid.mask(grid), {palette: ['ffff00']}, 'grid')

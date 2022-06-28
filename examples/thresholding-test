@@ -1,0 +1,54 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var images = ee.ImageCollection("LANDSAT/LC08/C01/T1_RT_TOA");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var thresholding = require('users/gena/packages:thresholding')
+var animation = require('users/gena/packages:animation')
+
+// get images
+images = images
+  .filterBounds(Map.getCenter())
+  .select(['B6', 'B5', 'B3'], ['swir', 'nir', 'green'])
+  
+print('Image count: ', images.size())  
+
+// compute NDWI and thresholds
+var scale = Map.getScale()
+var bounds = Map.getBounds(true)
+var cannyThreshold = 0.7
+var cannySigma = 1
+var minValue = -0.2
+
+images = images.map(function(i) {
+  i = i.resample('bilinear')
+  
+  var ndwi = i.normalizedDifference(['green', 'swir'])
+  var th = thresholding.computeThresholdUsingOtsu(ndwi, scale, bounds, cannyThreshold, cannySigma, minValue)
+  
+  var water = ee.Image().mask(ndwi.gt(th))
+    .visualize({palette: ['3182bd'], opacity: 0.5})
+    
+  var waterEdge = ee.Image(1).int().mask(ee.Algorithms.CannyEdgeDetector(ndwi.gt(th), 0.5, 0))
+    .visualize({palette: ['ffffff']})
+    
+  return i.visualize({min: 0.05, max: 0.35})
+    .blend(water)
+    .blend(waterEdge)
+    .set({th: th})
+    .set({label: th.format('%.2f')})
+})
+
+// remove potentially bad images
+images = images.filter(ee.Filter.gt('th', -0.15))
+
+// plot thresholds
+print(ui.Chart.feature.histogram(images, 'th'))
+
+// visualize
+animation.animate(images)

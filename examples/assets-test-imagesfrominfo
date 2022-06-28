@@ -1,0 +1,243 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+
+var assets = require('users/gena/packages:assets')
+
+// get multi-imagecollection images faster by providing a list of info's
+function app() {
+  var images = assets.getImagesFromInfo(info)
+  
+  print(images)
+}
+
+// this is returned by assets.getImageInfo(images)
+var info = [
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130327",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 142.04778,
+    "SUN_ELEVATION": 52.110012
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130520",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 124.3956,
+    "SUN_ELEVATION": 67.23413
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130605",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 118.5846,
+    "SUN_ELEVATION": 68.532745
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130621",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 115.55155,
+    "SUN_ELEVATION": 68.42825
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130707",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 116.400375,
+    "SUN_ELEVATION": 67.30334
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130723",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 120.82613,
+    "SUN_ELEVATION": 65.40377
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130808",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 127.69878,
+    "SUN_ELEVATION": 62.768562
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130824",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 135.62964,
+    "SUN_ELEVATION": 59.344017
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130909",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 143.36494,
+    "SUN_ELEVATION": 55.120193
+  },
+  {
+    "BANDS_FROM": [
+      "B6",
+      "B5",
+      "B4",
+      "B3",
+      "B2"
+    ],
+    "BANDS_TO": [
+      "swir",
+      "nir",
+      "red",
+      "green",
+      "blue"
+    ],
+    "IMAGE_ID": "LANDSAT/LC08/C01/T1_RT_TOA/LC08_026036_20130925",
+    "MISSION": "L8",
+    "MULTIPLIER": 1,
+    "RESAMPLE": false,
+    "SUN_AZIMUTH": 150.03787,
+    "SUN_ELEVATION": 50.24416
+  }
+]
+
+
+app()

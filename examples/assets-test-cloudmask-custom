@@ -1,0 +1,68 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Point([-118.92365767542618, 35.86338577732068]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var assets = require('users/gena/packages:assets')
+
+/***
+ * Use custom strategy for cloud masking per sensor
+ */
+var cloudMaskAlgorithms = {
+  L8: function(image) {
+    var qa = image.select('BQA');
+    /// Check that the cloud bit is off.
+    // See https://www.usgs.gov/land-resources/nli/landsat/landsat-collection-1-level-1-quality-assessment-band
+    var mask = qa.bitwiseAnd(1 << 4).eq(0);
+    
+    return image.addBands(mask.rename('cloud'));
+  },
+  
+  S2: function(image) {
+    var qa = image.select('QA60');
+    // Bits 10 and 11 are clouds and cirrus, respectively.
+    var cloudBitMask = 1 << 10;
+    var cirrusBitMask = 1 << 11;
+    // Both flags should be set to zero, indicating clear conditions.
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+      
+      
+    mask = mask.rename('cloud')
+    
+    return image.addBands(mask)
+  },
+  L7: function(image) {
+    var cloudMask = ee.Image.constant(0).rename('cloud')
+    
+    // TODO: implement cloud masking for L7
+    
+    return image.addBands(cloudMask)
+  },
+  L5: function(image) {
+    var cloudMask = ee.Image.constant(0).rename('cloud')
+    
+    // TODO: implement cloud masking for L7
+    
+    return image.addBands(cloudMask)
+  },
+  L4: function(image) {
+    var cloudMask = ee.Image.constant(0).rename('cloud')
+    
+    // TODO: implement cloud masking for L7
+    
+    return image.addBands(cloudMask)
+  }
+}
+
+var images = assets.getImages(geometry, {
+  missions: ['S2', 'L8'],
+  cloudMask: true,
+  cloudMaskAlgorithms: cloudMaskAlgorithms
+})
+
+var image = images.first()
+print(image)
+
+Map.addLayer(image.updateMask(image.select('cloud')))
+
+Map.centerObject(image)
+

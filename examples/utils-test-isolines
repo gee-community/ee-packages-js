@@ -1,0 +1,43 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var dem = ee.Image("USGS/SRTMGL1_003"),
+    alos = ee.Image("JAXA/ALOS/AW3D30/V2_2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+dem = alos.select('AVE_DSM')
+
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:colorbrewer').Palettes
+
+Map.setCenter(114.1, -8.1, 12)
+
+var minMax = dem.reduceRegion({ reducer: ee.Reducer.percentile([2, 98]), geometry: Map.getBounds(true), scale: Map.getScale() })
+
+minMax.evaluate(function(minMax) {
+  print(minMax)
+
+  var image = dem.resample('bicubic').convolve(ee.Kernel.gaussian(3, 2))
+  var levels = ee.List.sequence(minMax.AVE_DSM_p2, minMax.AVE_DSM_p98, (minMax.AVE_DSM_p98 - minMax.AVE_DSM_p2) / 20)
+  
+  var isolines = utils.getIsolines(image, levels)
+                                                                      
+  var palette = palettes.BrBG[11].reverse()
+  
+  Map.addLayer(ee.Terrain.hillshade(image.multiply(50), 315, 25), {min: -100, max: 350}, 'hillshade', true, 0.25)
+  
+  Map.addLayer(ee.Image(0), { palette: ['000000'] }, 'black', true, 0.75)
+  
+  Map.addLayer(isolines.mosaic(), {palette: palette, min: minMax.AVE_DSM_p2, max: minMax.AVE_DSM_p98}, 'isolines', true, 0.75)
+  
+  var levels2 = ee.List.sequence(minMax.AVE_DSM_p2, minMax.AVE_DSM_p98, (minMax.AVE_DSM_p98 - minMax.AVE_DSM_p2) / 5)
+  var isolines2 = utils.getIsolines(image, levels2)
+  
+  Map.addLayer(isolines2.mosaic().focal_max(1), {palette: palette, min: minMax.AVE_DSM_p2, max: minMax.AVE_DSM_p98}, 'isolines (thick)', true, 0.75)
+  
+  Map.setOptions('SATELLITE')  
+})

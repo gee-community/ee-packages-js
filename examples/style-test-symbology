@@ -1,0 +1,26 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var basins = ee.FeatureCollection("users/gena/water-niger/catchments-homogenized");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var style = require('users/gena/packages:style')
+var palettes = require('users/gena/packages:palettes')
+
+// WORK IN PROGRESS
+
+style.SetMapStyleDark()
+
+Map.centerObject(basins, 9)
+
+print(basins.first())
+
+// add background
+Map.addLayer(ee.Image(1), { palette: ['black'] }, 'background', true, 0.7)
+
+// add features colored using DIST_SINK property 
+// see https://github.com/gee-community/ee-palettes for a full list of color palettes
+Map.addLayer(style.Feature.histogram(basins, 'DIST_SINK', { palette: palettes.crameri.buda[50], width: 1, opacity: 0.6 }), {}, 'polygons')
+
+// add feature labels using PFAF_ID property
+Map.addLayer(style.Feature.label(basins, 'PFAF_ID', { textColor: 'ffffff', outlineColor: '000000', alignX: 'center', alignY: 'center' }), {}, 'labels')
+
+// add centroids
+Map.addLayer(basins.map(function(f) { return f.centroid(1) }).style({ pointSize: 2, width: 1, color: 'ffff00', fillColor: 'ffff0033'}), {}, 'centroids', false)

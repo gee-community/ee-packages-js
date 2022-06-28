@@ -1,0 +1,38 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// repository: https://code.earthengine.google.com/?accept_repo=users/gena/packages
+// file: promise-test
+
+var Promise = require('users/gena/packages:promise').Promise
+
+// async call 1, uses EE evaluate
+var p1 = new Promise(function(resolve, reject) {
+  var x = ee.Number(1)
+  
+  x.evaluate(function(o) {
+    resolve(o)
+  })
+})
+
+// async call 2, uses EE evaluate
+var p2 = new Promise(function(resolve, reject) {
+  var y = ee.Number(2)
+  
+  y.evaluate(function(o) {
+    resolve(o)
+  })
+})
+
+// just a string
+var p3 = Promise.resolve('Done!')
+
+// get results sequentially
+Promise.sequence([p1, p2, p3]).then(function(values) {
+  // values are given in a predefined order, independently from the evaluation
+  print(values)
+})

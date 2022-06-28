@@ -1,0 +1,376 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var utils = require('users/gena/packages:utils')
+var text = require('users/gena/packages:text')
+
+var timeout = null
+var play = false
+
+function addAnimationControls(layers, opacity, position, timeStep, width, labelProperty, compact, onChange, hidePlay, map, preloadLast) {
+  var currentIndex = 0
+  
+  if(preloadLast) {
+    currentIndex = map.layers().length()-1
+  }
+  
+  layers.map(function(l) { 
+    l.setOpacity(0) 
+  })
+  
+  var onSlide = function(index) {
+    onChange(index)
+
+    layers[currentIndex].setOpacity(0)
+    
+    var l = layers[index]
+    
+    l.setOpacity(opacity)
+    
+    currentIndex = index
+
+    // update visibility if needed
+    var shown = l.getShown()
+    if(!shown) {
+      l.setShown(true) 
+    }
+    
+    label.setValue(layers[index].getName())
+  };
+
+  var label = ui.Label('');
+  
+  function onHideLayers() {
+    layers.map(function(l) {
+      l.setShown(false)
+    })
+  }
+
+  function nextFrame() { 
+    var index = currentIndex + 1
+    if(index >= layers.length) {
+      index = 0
+    }
+
+    slider.setValue(index)
+    
+    if(play) {
+      ui.util.setTimeout(nextFrame, timeStep)
+    }
+  }
+
+  function onPlayPause() {
+    if(!play && !timeout) {
+      timeout = ui.util.setTimeout(nextFrame, timeStep)
+      play = true
+      buttonPlayPause.setLabel(textPause)
+    } else {
+      ui.util.clearTimeout(timeout)
+      timeout = null
+      play = false
+      buttonPlayPause.setLabel(textPlay)
+    }
+  }
+  
+  var textPlay = '▶'
+  var textPause = '⏸'
+  
+  var buttonPlayPause = ui.Button(textPlay, onPlayPause)
+  
+  if(hidePlay) {
+    buttonPlayPause.style().set({ shown: false })
+  }
+  
+  var buttonHideLayers = ui.Button('Hide', onHideLayers)
+
+  var slider = ui.Slider({
+    value: currentIndex,
+    min: 0,
+    max: layers.length - 1,
+    step: 1,
+    style: {stretch: 'horizontal'}
+  });
+
+  slider.onSlide(onSlide)
+  
+  var sliderOpacity = ui.Slider({
+    min:0, max: 1, step: 0.1
+  })
+  
+  sliderOpacity.onSlide(function(o) {
+    layers[currentIndex].setOpacity(o)
+    opacity = o
+  })
+  
+  sliderOpacity.setValue(opacity)
+
+  var widgets = [slider, label, buttonPlayPause, buttonHideLayers, sliderOpacity]
+
+  if(compact) {
+    widgets = [buttonPlayPause, slider, label]
+  }
+  
+  // Create a panel that contains both the slider and the label.
+  var panel = ui.Panel({
+    widgets: widgets,
+    layout: ui.Panel.Layout.flow('horizontal'),
+    style: {
+      position: position,
+      padding: '7px',
+      width: width
+    }
+  });
+  
+  map.add(panel)
+
+  layers[currentIndex].setOpacity(1)
+  
+  // loop
+  function delay(millis, callback) {
+    var before = Date.now();
+    
+    function loop() {
+      ee.Number(Date.now()).evaluate(function(now) { 
+        if(now < before + millis) {
+          loop()
+        } else {
+          callback()
+        }
+      })
+    }
+    
+    loop()
+  }
+  
+  function setTimeout(interval, action) {
+    delay(interval, function() {
+      action()
+      
+      setTimeout(interval, action)
+    }) 
+  }
+    
+  // this never stops, even after Reset 
+  /*
+  setTimeout(100, function() { 
+    var index = currentIndex + 1
+    if(index >= layers.length) {
+      index = 0
+    }
+    onSlide(index) 
+  })
+  */
+  
+  // update layer names (async)
+  if(labelProperty) {
+    layers.map(function(layer) {
+      var image = ee.Image(layer.getEeObject())
+      
+      var labelValue = ''
+      
+      if(labelProperty == '{{date}}') {
+        labelValue = image.date().format('YYYY-MM-dd')
+      } else {
+        labelValue = image.get(labelProperty)
+      }
+      
+      labelValue.evaluate(function(s) {
+        layer.setName(s)
+        
+        slider.setValue(slider.getValue())
+      
+        if(layer.getShown()) { // TODO: make it more robust, e.g. index is !== 0
+          label.setValue(s)
+        }
+      })
+    })
+  }
+
+  return panel
+}
+
+
+/***
+ * Animates a maxImageCount images from a given image collection, adds them as layers so that GMap caching can be used
+ */
+function animate(images, options) {
+  var maxFrames = (options && options.maxFrames) || 30
+  var width = (options && options.width) || '600px'
+  var labelProperty = (options && options.label) || null
+  var compact = (options && options.compact) || false
+  var vis = (options && options.vis) || {}
+  var opacity = (options && options.opacity) || 1.0
+  var position = (options && options.position) || 'top-center'
+  var prefix = (options && options.prefix) || ''
+  var timeStep = (options && options.timeStep) || 100
+  var onChange = (options && options.onChange) || function(i) {}
+  var preloadCount = (options && options.preloadCount) || 999999
+  var map = (options && options.map) || Map
+
+  var preloadLast = false
+  if(options && options.preloadLast != 'undefined') {
+    preloadLast = options.preloadLast
+  }
+
+  var hidePlay = false
+  if(options && options.hidePlay != 'undefined') {
+    hidePlay = options.hidePlay
+  }
+
+  var preload = true
+  
+  if(options && options.preload != 'undefined') {
+    preload = options.preload
+  }
+  
+  images = ee.ImageCollection(images).toList(maxFrames, 0)
+
+  maxFrames = images.size().min(maxFrames)
+  
+  // add loading panel
+  var label = ui.Label('Loading images, please wait ....');
+  var panel = ui.Panel({
+    widgets: [label],
+    layout: ui.Panel.Layout.flow('horizontal'),
+    style: {
+      position: position,
+      padding: '7px',
+      width: width
+    }
+  });
+  map.widgets().add(panel)
+
+  // chaining
+  var s = this
+
+  s.panel = panel
+
+  s.then = function(callback) { 
+    s.callback = callback
+
+    return s
+  }
+
+  var lodingPanel = panel
+  
+  ee.List.sequence(0, maxFrames.subtract(1)).evaluate(function(indices) {
+    var layers = []
+
+    indices.map(function(i) {
+      var image = ee.Image(images.get(i))
+      var name = prefix + ' ' + utils.pad(i, 2)
+      
+      if(options && options.clip) {
+        image = image.clip(options.clip)
+      }
+
+      var visible = preload
+
+      if(preload == false || i >= preloadCount) {
+        visible = false
+      }
+      
+      if(preloadLast) {
+        visible = false
+      }
+
+      var layer = ui.Map.Layer(image, vis, name, visible)
+      map.layers().add(layer)
+      layers.push(layer)
+    })
+    
+    // show layers from the end
+    if(preloadLast) {
+      map.layers().get(0).setShown(false)
+      
+      for(var i=0; i<preloadCount; i++) {
+        var index = map.layers().length()-1-i
+        
+        map.layers().get(index).setShown(true)
+      }
+    }
+    
+    // remove loading panel
+    map.widgets().remove(lodingPanel)
+
+    var panel = addAnimationControls(layers, opacity, position, timeStep, width, labelProperty, compact, onChange, hidePlay, map, preloadLast)
+
+    // replace panel
+    s.panel = panel
+    s.clear = function() {
+      map.widgets().remove(panel)
+      
+      layers.forEach(function(layer) {
+        map.layers().remove(layer)
+      })
+    }
+    
+    s.hideLayers = function() {
+      layers.forEach(function(layer) {
+        if(!layer.getOpacity()) { // hide non-active layers
+          layer.setShown(false)
+        }
+      })
+    }
+    
+
+    if(s.callback) {
+      s.callback()
+    }
+  })
+
+  return s
+}
+
+exports.animate = animate
+
+
+/***
+ * procrastination ...
+ */
+
+exports.getGlyph = function(options) {
+  var count = 7
+  var glyphs = ee.ImageCollection('users/gena/animation-test-images').toList(count)
+
+  return function(i) {
+    i = ee.Number(i)
+  
+    var image = ee.Image(glyphs.get(i.mod(count)))
+    
+    image = image
+      .mask(ee.Image.constant(255).subtract(image).divide(255))
+  
+    var scale = ee.Number(options.scale)
+  
+    var glyphHeight = ee.Number(400)
+    var glyphWidth = ee.Number(400)
+  
+    var bounds = ee.Geometry(options.bounds).transform('EPSG:3857', scale)
+    var center = bounds.centroid(scale).transform('EPSG:3857', scale).coordinates()
+
+    var coords = ee.List(bounds.coordinates().get(0))
+    
+    var ll = ee.List(coords.get(0))
+    var ur = ee.List(coords.get(2))
+    var width = ee.Number(ur.get(0)).subtract(ll.get(0)).abs().divide(scale)
+  
+    var stepx = width.add(glyphWidth).divide(ee.Number(options.frameCount).subtract(1))
+
+    var x = ee.Number(ll.get(0)).subtract(scale.multiply(glyphWidth)).add(scale.multiply(i.multiply(stepx)))
+    var y = ee.Number(center.get(1)).add(scale.multiply(glyphHeight).divide(2))
+    
+    var proj = ee.Projection('EPSG:3857')
+      .translate(x, y)
+      .scale(scale, scale.multiply(-1))
+      
+    return image
+      .changeProj(image.projection(), proj)
+  }
+}
+
+//Map.addLayer(exports.getGlyph({scale: Map.getScale(), bounds: Map.getBounds(true), frameCount: 40})(5))

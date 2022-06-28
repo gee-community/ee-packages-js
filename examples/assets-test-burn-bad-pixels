@@ -1,0 +1,90 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var assets = require('users/gena/packages:assets')
+var animation = require('users/gena/packages:animation')
+
+var bounds = ee.Geometry(Map.getBounds(true))
+
+var images = assets.getImages(bounds.centroid(1), {
+  resample: true,
+  filter: ee.Filter.date('2015-01-01', '2020-01-01')
+})
+
+print('image count: ', images.size())
+
+// add raw images to map
+Map.addLayer(images, {}, 'images (raw)', false)
+
+images = assets.getMostlyCleanImages(images, bounds)
+
+images = images
+  .sort('system:time_start')
+
+print('image count (clean): ', images.size())
+
+// add raw images to map
+Map.addLayer(images, {}, 'images (raw, clean)', false)
+
+// compute per-pixel quality score
+/*var includeNeighborhood = false*/
+
+var thMin = 75 // CDF thredholds
+var thMax = 95
+images = assets.addCdfQualityScore(images, thMin, thMax /*, includeNeighborhood*/)
+
+// visualize
+
+// raw images
+var imagesRGB = images.map(function(i) {
+  var image = i.visualize({min: 0.05, max: 0.5})
+  
+  return image
+})
+
+animation.animate(imagesRGB, { preload: false })
+
+// weights
+var weight = images.map(function(i) {
+  var weight = i.select('weight')
+  weight = weight.mask(ee.Image.constant(1).subtract(weight))
+  
+  weight = weight.visualize({palette: ['ffff00'], min: 0, max: 1})
+  
+  var image = i.visualize({min: 0.05, max: 0.5})
+  
+  var composite = ee.ImageCollection.fromImages([
+    image,
+    weight
+  ])
+
+  return composite.mosaic()
+})
+
+animation.animate(weight, {position: 'bottom-center'})
+
+
+
+
+
+/* 
+images = images.map(function(i) {
+  var weight = i.select('weight')
+  weight = weight.mask(weight.not())
+  weight = weight.visualize({palette: ['000000', 'ffff00'], min: 0, max: 1})
+  
+  var image = i.visualize({min: 0.05, max: 0.35})
+  
+  var composite = ee.ImageCollection.fromImages([
+    image,
+    weight
+  ])
+  
+  return composite.mosaic()
+    .set({label: i.date().format()})
+})
+*/

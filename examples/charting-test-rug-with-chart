@@ -1,0 +1,58 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var pt = /* color: #d63000 */ee.Geometry.Point([72.94506757267176, 19.010026096782486]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var charting = require('users/gena/packages:charting')
+
+var collections = [
+  { id: 'LANDSAT/LC08/C01/T1_RT_TOA', color: 'blue', vis: { min: 0.02, max: 0.4, bands: ['B5', 'B4', 'B2'] } },
+  { id: 'LANDSAT/LC08/C01/T2_TOA', color: 'blue', vis: { min: 0.02, max: 0.4, bands: ['B5', 'B4', 'B2'] } }, 
+  { id: 'COPERNICUS/S2', color: 'black', vis: { min: 200, max: 4000, bands: ['B12', 'B8', 'B2'] } },
+  { id: 'COPERNICUS/S1_GRD', color: 'green', vis: { min: -30, max: -5 } }
+]
+
+collections.map(function(c) {
+  c.collection = ee.ImageCollection(c.id).filterBounds(pt)
+})
+
+var layer = ui.Map.Layer(ee.Image(), {}, 'image')
+Map.layers().add(layer)
+
+
+function showThumb(year) {
+  print(year)
+  
+  var start = ee.Date.fromYMD(year, 1, 1)
+  var stop = start.advance(1, 'year')
+  
+  print(start, stop)
+  
+  // plot
+  var rect = ee.Geometry.Rectangle({ coords: [[0, 0], [100, 6]], geodesic: false })
+  
+  // add rug plots
+  collections.map(function(c) {
+    var plot = new charting.Plot(rect.bounds(), { 
+      area: { width: 1, color: '000000', fillColor: '00000011' }
+    })
+
+    plot.setMinMax(start.millis(), stop.millis(), 0, 1)
+    
+    var images = c.collection.filterDate(start, stop)
+    var times = ee.List(images.aggregate_array('system:time_start'))
+
+    plot.addRugSeries(c.id, times, { width: 1, color: c.color })  
+
+    print(plot.getThumbnail({ dimensions: '600x24'}))
+
+    var chart = ui.Chart.array.values(ee.List.repeat(1, times.size()), 0, times).setOptions({ title: c.id, pointSize: 2 })
+    // print('Click on the series points to add images')
+    // print(chart)
+    
+    chart.onClick(function(v) {
+      layer.setEeObject(c.collection.filterDate(v).first().visualize(c.vis))
+    })
+  })
+}
+
+var years = ee.List.sequence(2019, 2021)
+years.evaluate(function(years) { years.map(showThumb) })

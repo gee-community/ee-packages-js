@@ -1,0 +1,25 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var bounds = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-124.028125, 38.569383491202544],
+          [-124.028125, 36.336986018561895],
+          [-117.7, 36.336986018561895],
+          [-117.7, 38.569383491202544]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var utils = require('users/gena/packages:utils')
+
+var w = 1024
+var h = 768
+var o = utils.generateExportParameters(bounds, w, h, 'EPSG:3857')
+
+print(o.scale)
+
+Map.addLayer(o.bounds)
+
+// Export.video({ region: o.bounds, scale: o.scale, ... }

@@ -1,0 +1,169 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+/***
+ * EE GLSL emulation, a-la Shadertoy.
+ * 
+ * It's still tollally useless, just an experiment.
+ */
+
+exports.init = function(opt_bounds) {
+  var bounds = opt_bounds || Map.getBounds(true)
+
+  var proj = ee.Projection('EPSG:3857')
+  bounds = ee.Geometry(bounds).transform(proj, 1)
+  bounds = ee.List(bounds.coordinates().get(0))
+  var ll = ee.List(bounds.get(0))
+  var ur = ee.List(bounds.get(2))
+  var xmin = ee.Number(ll.get(0))
+  var xmax = ee.Number(ur.get(0))
+  var ymin = ee.Number(ll.get(1))
+  var ymax = ee.Number(ur.get(1))
+  
+  var width = xmax.subtract(xmin)
+  var height = ymax.subtract(ymin)
+
+  var iResolution = { 
+    x : ee.Image.constant(width), 
+    y: ee.Image.constant(height), 
+    xy: ee.Image.constant([width, height]) 
+  }
+  
+  var origin = ee.Image.constant([xmin, ymin])
+  var size = ee.Image.constant([width, height])
+  
+  var fragCoord = ee.Image.pixelCoordinates(proj).rename(['x', 'y'])
+  fragCoord = fragCoord.subtract(origin)
+
+  return {
+    iResolution: iResolution,
+    fragCoord: fragCoord,
+    length: exports.length,
+    normalize: exports.normalize,
+    fract: exports.fract,
+    rotate: exports.rotate,
+    sign: exports.sign,
+    rotateImage: exports.rotateImage,
+    vec2: exports.vec2,
+    vec3: exports.vec3,
+    mat3: exports.mat3,
+    dot: exports.dot,
+    smoothstep: exports.smoothstep,
+    radians: exports.radians,
+    reflect: exports.reflect,
+    toImage3: exports.toImage3
+  }
+}
+
+exports.length = function(i) {
+  return i.multiply(i).reduce(ee.Reducer.sum()).sqrt()
+}
+
+exports.normalize = function(i) {
+  return i.divide(exports.length(i))
+}
+
+exports.fract = function(i) {
+  return i.subtract(i.floor())
+}
+
+exports.sign = function(i) {
+  return i.gt(0).where(i.lt(0), ee.Image.constant(-1))
+}
+
+exports.vec2 = function(a1, a2) {
+  return ee.Image(ee.Array([a1, a2]))
+}
+
+exports.vec3 = function(a1, a2, a3) {
+  return ee.Image(ee.Array([a1, a2, a3]))
+}
+
+exports.mat3 = function(a11, a21, a31, a12, a22, a32, a13, a23, a33) {
+  return ee.Image(ee.Array([
+    [a11, a12, a13],
+    [a21, a22, a23],
+    [a31, a32, a33]
+  ]))
+}
+
+exports.smoothstep = function(edge0, edge1, x) {
+  var t = x.subtract(edge0).divide(ee.Image(edge1).subtract(edge0)).clamp(0, 1)
+
+  return t.multiply(t).multiply(ee.Image.constant(3).subtract(ee.Image.constant(2).multiply(t)))
+}
+
+
+exports.rotate = function(i, bands, angle) {
+  var rotation = [ [angle.cos(), angle.sin().multiply(-1)], [angle.sin(), angle.cos()] ]
+  
+  rotation = ee.Image(ee.Array(rotation))
+  var i2 = i.select(bands)
+  i2 = i2.toArray().arrayRepeat(1, 1).arrayTranspose()
+  i2 = i2.matrixMultiply(rotation).arrayProject([1]).arrayFlatten([bands])
+  i = i.addBands(i2, bands, true)
+  
+  return i
+}
+
+exports.rotateImage = function(image, origin, angle, opt_proj) {
+  var proj = opt_proj || 'EPSG:3857'
+  
+  proj = ee.Projection(proj)
+  angle = ee.Number(angle)
+
+  var coords = ee.Image.pixelCoordinates(proj)
+  origin = ee.Geometry(origin).transform(proj).coordinates()
+  var coordsRelative = coords.subtract(ee.Image.constant(origin))
+
+  var bands = coords.bandNames()
+  var rotation = ee.Image(ee.Array([ [angle.cos(), angle.sin().multiply(-1)], [angle.sin(), angle.cos()] ]))
+  var coordsRotated = rotation.matrixMultiply(coordsRelative.toArray().arrayRepeat(1, 1)).arrayTranspose().arrayProject([1]).arrayFlatten([bands])
+  
+  return image.displace(coordsRotated.subtract(coordsRelative))
+}
+
+exports.getGradientMask = function(gradientLine, opt_scale) {
+  var coords = gradientLine.coordinates()
+  var begin = ee.List(coords.get(0))
+  var end = ee.List(coords.get(1))
+  var deltaX = ee.Number(end.get(0)).subtract(begin.get(0))
+  var deltaY = ee.Number(end.get(1)).subtract(begin.get(1))
+  var angle = deltaY.atan2(deltaX).add(Math.PI/2)
+  
+  var image = ee.Image.pixelLonLat().select('longitude')
+  
+  var origin = ee.Geometry.Point(coords.get(0))
+  
+  image = exports.rotateImage(image, origin, angle)
+  
+  var scale = opt_scale || Map.getScale()
+
+  var minMax = image.reduceRegion(ee.Reducer.minMax(), gradientLine, scale).values()
+  image = image.unitScale(minMax.get(1), minMax.get(0))
+  
+  return image.subtract(1).multiply(-1)
+}
+
+exports.radians = function(degree) {
+  return ee.Image(degree).multiply(Math.PI).divide(180)
+}
+
+/***
+ * I - 2.0 * dot(N, I) * N
+ */
+exports.reflect = function(I, N) {
+   return I.subtract(N.toArray().arrayDotProduct(I.toArray()).multiply(N).multiply(2))
+}
+
+exports.dot = function(A, B) {
+  return A.toArray().arrayDotProduct(B.toArray())
+}
+
+exports.toImage3 = function(i) {
+  return i.arrayProject([0]).arrayFlatten([['x', 'y', 'z']])
+}

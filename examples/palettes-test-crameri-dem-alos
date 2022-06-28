@@ -1,0 +1,76 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var dem = ee.Image("AHN/AHN2_05M_RUW"),
+    demALOS = ee.Image("JAXA/ALOS/AW3D30_V1_1"),
+    land = ee.Image("users/gena/land_polygons_image"),
+    bathymetryGEBCO = ee.Image("users/gena/GEBCO_2014_2D"),
+    demETOPO = ee.Image("NOAA/NGDC/ETOPO1"),
+    demARCTIC = ee.Image("UMN/PGC/ArcticDEM/V3/2m_mosaic");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var utils = require('users/gena/packages:utils')
+
+
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:palettes')
+
+Map.setOptions('HYBRID')
+// Map.setCenter(4.4115, 52.2119, 17)
+
+// var palette = palettes.crameri.lisbon[25]
+// palettes.showPalette('lisbon', palette)
+
+// var palette = palettes.crameri.roma[25].slice(0).reverse()
+// palettes.showPalette('roma', palette)
+
+var palette = palettes.crameri.oleron[50]
+palettes.showPalette('oleron', palette)
+
+// var min = -1
+// var max = 15
+
+var min = -4300
+var max = 5000
+
+
+// cpt-city ETOPO1, min/max are from http://soliton.vm.bytemark.co.uk/pub/cpt-city/ngdc/tn/ETOPO1.png.index.html
+var palette = ['#0a0079ff', '#0c007bff', '#0e007dff', '#110080ff', '#130082ff', '#160085ff', '#180087ff', '#1a008aff', '#1c008cff', '#1e008eff', '#200090ff', '#220093ff', '#240095ff', '#250097ff', '#240099ff', '#22009cff', '#21019eff', '#1f01a0ff', '#1d02a2ff', '#1c02a4ff', '#1a03a6ff', '#1803a8ff', '#1604abff', '#1504adff', '#1305afff', '#1105b1ff', '#1005b3ff', '#0e06b5ff', '#0c06b7ff', '#0b07b9ff', '#0907bbff', '#0708bdff', '#0608bfff', '#0409c1ff', '#030ac3ff', '#030ac4ff', '#020bc6ff', '#010cc7ff', '#000dc9ff', '#000dcaff', '#000ecbff', '#0010ccff', '#0011cdff', '#0012cfff', '#0013d0ff', '#0015d1ff', '#0016d2ff', '#0017d3ff', '#0018d4ff', '#0019d4ff', '#001bd5ff', '#001cd6ff', '#001dd7ff', '#001ed8ff', '#0020d9ff', '#0021daff', '#0023dbff', '#0024ddff', '#0025deff', '#0027dfff', '#022ce0ff', '#0330e1ff', '#0534e2ff', '#0739e4ff', '#093de5ff', '#0b42e6ff', '#0d47e7ff', '#0f4ce9ff', '#1151eaff', '#1356ebff', '#155cedff', '#1861eeff', '#1966f0ff', '#1868f0ff', '#176af1ff', '#166df1ff', '#156ff2ff', '#1471f3ff', '#1373f3ff', '#1276f4ff', '#1178f5ff', '#117bf5ff', '#107df6ff', '#0f80f7ff', '#0e82f8ff', '#0e85f9ff', '#0f88f9ff', '#108cf9ff', '#1190faff', '#1294faff', '#1398fbff', '#149bfbff', '#159ffcff', '#17a2fcff', '#18a5fdff', '#19a8fdff', '#1babfeff', '#1caefeff', '#1db1feff', '#1fb3ffff', '#21b4ffff', '#23b5ffff', '#25b6ffff', '#27b8ffff', '#29b9ffff', '#2bbaffff', '#2dbbffff', '#2fbcffff', '#31bdffff', '#33beffff', '#34bfffff', '#36c0ffff', '#38c1ffff', '#39c2ffff', '#3bc4ffff', '#3cc5ffff', '#3ec6ffff', '#3fc7ffff', '#41c8ffff', '#43caffff', '#45cbffff', '#48cdffff', '#4aceffff', '#4cd0ffff', '#4ed1ffff', '#50d3ffff', '#53d5ffff', '#55d7ffff', '#57d9ffff', '#59dbffff', '#5cddffff', '#5fdfffff', '#66dfffff', '#6de0ffff', '#73e0ffff', '#7ae1ffff', '#81e2ffff', '#87e2ffff', '#80d5e3ff', '#73c2bcff', '#66af95ff', '#589c6eff', '#4b8947ff', '#3e7620ff', '#33720cff', '#33c05aff', '#8bdb82ff', '#c4e297ff', '#d5e0a1ff', '#e7deabff', '#f8dcb5ff', '#fddab4ff', '#fcd7adff', '#fad4a5ff', '#f8d29eff', '#f6cf97ff', '#f4cc8fff', '#f2c988ff', '#f0c780ff', '#eec479ff', '#ecc171ff', '#eabe6aff', '#e8bc62ff', '#e6b95bff', '#e4b653ff', '#e2b34cff', '#e0b144ff', '#deae3dff', '#dcab35ff', '#daa82eff', '#d9a627ff', '#d1a425ff', '#caa224ff', '#c2a023ff', '#bb9e22ff', '#b39c20ff', '#ac9a1fff', '#a7991eff', '#a7971dff', '#a6961cff', '#a5941bff', '#a5931aff', '#a49119ff', '#a49019ff', '#a38e18ff', '#a38d17ff', '#a38b16ff', '#a28a15ff', '#a28814ff', '#a28613ff', '#a18512ff', '#a18311ff', '#a08110ff', '#a0800fff', '#9f7e0eff', '#9f7c0eff', '#9f7b0dff', '#9e790cff', '#9e780bff', '#9d760aff', '#9d7509ff', '#9c7308ff', '#9c7207ff', '#9b7006ff', '#9b6e05ff', '#9a6d04ff', '#9a6b03ff', '#9a6902ff', '#996801ff', '#996600ff', '#9a640aff', '#9b6218ff', '#9c6025ff', '#9e5e33ff', '#9f5c40ff', '#a05a4eff', '#a25a5aff', '#a55e5eff', '#a76262ff', '#a96767ff', '#ac6b6bff', '#ae7070ff', '#b17474ff', '#b27979ff', '#b37d7dff', '#b48181ff', '#b48686ff', '#b58a8aff', '#b68f8fff', '#b79393ff', '#b89898ff', '#ba9c9cff', '#bca0a0ff', '#bda5a5ff', '#bfa9a9ff', '#c1aeaeff', '#c2b2b2ff', '#c4b6b6ff', '#c6bbbbff', '#c7bfbfff', '#c9c3c3ff', '#cac8c8ff', '#ccccccff', '#d0d0d0ff', '#d3d3d3ff', '#d7d7d7ff', '#dbdbdbff', '#dfdfdfff', '#e3e3e3ff', '#e7e7e7ff', '#ebebebff', '#efefefff', '#f3f3f3ff', '#f7f7f7ff', '#fbfbfbff']
+var min = -11000
+var max = 8500
+
+demALOS = demALOS.select('MED')
+
+var dems = [ 
+  bathymetryGEBCO.resample('bicubic').rename('z'),
+  // demARCTIC.resample('bicubic').updateMask(land.mask()).rename('z'),
+  demALOS.resample('bicubic').updateMask(land.mask()).rename('z'),
+]
+
+function visualize(dem) {
+  // var demRGB = dem.subtract(min).log().visualize({ min: 0, max: Math.log(max - min), palette: palette })
+  var demRGB = dem.visualize({ min: min, max: max, palette: palette })
+  
+  var weight = 0.9 // wegith of Hillshade vs RGB intensity (0 - flat, 1 - HS)
+  var exaggeration = 30 // vertical exaggeration
+  var azimuth = 315 // Sun azimuth
+  var zenith = 90-30 // Sun elevation
+  var brightness = 0 // 0 - default
+  var contrast = 0.1 // 0 - default
+  var saturation = 0.8
+  var castShadows = true
+  return utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+} 
+
+var rgb = ee.ImageCollection(dems.map(visualize)).mosaic()
+
+Map.addLayer(rgb, {}, 'DEM')
+
+Map.addLayer(dem, {}, 'DEM (raw)', false)
+
+/*
+var animation = require('users/gena/packages:animation')
+
+var frames = ee.List.sequence(0, 365, 5).map(function(azimuth) {
+  return utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, castShadows, brightness)
+})
+
+animation.animate(frames, { preload: false})
+*/

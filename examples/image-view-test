@@ -1,0 +1,42 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var band = 'B8A'
+var image = ee.ImageCollection('COPERNICUS/S2').first().select(band)
+Map.centerObject(image.geometry().centroid(1), 19)
+
+image = image.divide(10000)
+
+Map.addLayer(image, {min: 0.05, max: 0.6 }, 'image')
+
+var imageView = require('users/gena/packages:image-view')
+var text = require('users/gena/packages:text')
+
+// show pixel centers
+var view = new imageView.ImageView(image.clip(ee.Geometry(Map.getBounds(true))))
+
+var pixelCenters = view.getPixelCenters()
+
+Map.addLayer(pixelCenters.style({pointSize: 1, color: 'yellow'}), {}, 'pixel centers')
+
+// show pixel values
+var pixelValues = image.reduceRegions(pixelCenters, ee.Reducer.first().setOutputs([band]), Map.getScale())
+
+print(pixelValues
+)
+var labels = pixelValues.map(function(f) {
+  var value = ee.Number(f.get(band))
+  var point = f.geometry()
+  var scale = Map.getScale()
+  var label = text.draw(value.format('%.2f'), point, scale, { fontSize: 16 })
+
+  return label
+})
+
+var labels = ee.ImageCollection(labels).mosaic()
+
+Map.addLayer(labels, {}, 'label')

@@ -1,0 +1,69 @@
+// Shadertoy ray marching tutorial: https://www.youtube.com/watch?v=yxNnRSefK94
+
+var gl = require('users/gena/packages:gl').init()
+
+/***
+ * Signed distance function to show a sphere
+ */
+function sdfSphere(p) {
+  return gl.length(p).subtract(1.0)
+}
+
+/***
+ * Raymarching 
+ * 
+ * o - origin
+ * r - ray
+ */
+function trace(o, r) {
+  var t = ee.Image.constant(0.0);
+  
+  var i = ee.List.sequence(0, 32, 1)
+  
+  t = i.iterate(function(i, prev) {
+    prev = ee.Image(prev)
+    var p = o.add(r.multiply(prev))
+    var d = sdfSphere(p)
+    prev = prev.add(d.multiply(0.5))
+    return prev
+  }, t)
+  
+  return ee.Image(t)
+}
+
+/***
+ * Main rendering function
+ */
+function render(time) {
+  var uv = gl.fragCoord.divide(gl.iResolution.xy)
+
+  // make coordinates go from -1 to 1
+  uv = uv.multiply(2).subtract(1)
+
+  uv = uv.multiply(ee.Image([gl.iResolution.x.divide(gl.iResolution.y), 1.0]))
+
+  var z = -3
+
+  var r = gl.normalize(uv.addBands(ee.Image.constant(1).rename('z')))
+  var o = ee.Image([0, 0, z])
+  var t = trace(o, r)
+  var fog = ee.Image.constant(1).divide(ee.Image.constant(1.0).add(t.multiply(t).multiply(0.1)))
+
+  var color = fog
+
+  return color
+}
+
+// ==================================
+Map.setCenter(0, 0, 15)
+Map.setLocked(true)
+
+var vis = { min: 0, max: 1 }
+
+var image = render(0)
+Map.addLayer(image, vis, 'image')
+
+// var animation = require('users/gena/packages:animation')
+// var images = ee.List.sequence(0, 1.91, 0.1).map(function(t) { return render(t) })
+// animation.animate(images, { vis: vis, timeStep: 50, maxFrames: 100 })
+

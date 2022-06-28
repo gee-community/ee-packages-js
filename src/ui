@@ -1,0 +1,162 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+exports.doc = "Area and polyline drawing tools"
+
+// TODO: refactor into a single DrawGeometryTool
+// TODO: this has to be supported by the EE UI itself, client-side, instead of hacking here
+
+var DrawTransectTool = function(map) {
+  this.map = map
+  this.layer = ui.Map.Layer({name: 'transect', visParams: { color:'green' }})
+  this.selection = null
+  this.active = false
+  this.points = []
+  this.transect = null
+  
+  this.listenersFinished = []
+  this.listenersDraw = []
+
+  var tool = this;
+  
+  this.initialize = function() {
+    this.map.onClick(this.onMouseClick)
+    this.map.layers().add(this.layer)
+  }
+  
+  this.startDrawing = function() {
+    this.active = true
+    this.points = []
+
+    this.map.style().set('cursor', 'crosshair');
+    this.layer.setShown(true)
+  }
+  
+  this.stopDrawing = function() {
+    tool.active = false
+    tool.map.style().set('cursor', 'hand');
+
+    tool.transect = ee.Geometry.LineString(tool.points)
+    tool.layer.setEeObject(tool.transect)
+
+    tool.listenersFinished.map(function(listener) {
+      listener(tool.transect)
+    })
+  }
+  
+  /***
+   * Mouse click event handler
+   */
+  this.onMouseClick = function(coords) {
+    if(!tool.active) {
+      return
+    }
+    
+    tool.points.push([coords.lon, coords.lat])
+
+    var geom = tool.points.length > 1 ? ee.Geometry.LineString(tool.points) : ee.Geometry.Point(tool.points[0])
+    tool.layer.setEeObject(geom)
+    
+    var l = ee.Geometry.LineString([tool.points[0], tool.points[tool.points.length-1]]).length(1).getInfo()
+
+    // stop manually, using stopDrawing() instead of this:
+
+    // if(tool.points.length > 1 && l / Map.getScale() < 5) {
+    //   tool.stopDrawing()
+    //}
+
+    tool.listenersDraw.map(function(listener) {
+      listener(tool.points)
+    })
+  }
+  
+  /***
+   * Adds a new event handler, fired on feature selection. 
+   */
+  this.onFinished = function(listener) {
+    tool.listenersFinished.push(listener)
+  }
+
+  /***
+   * Adds a new event handler, fired on draw. 
+   */
+  this.onDraw = function(listener) {
+    tool.listenersDraw.push(listener)
+  }
+  
+  this.initialize()
+}
+
+var DrawAreaTool = function(map) {
+  this.map = map
+  this.layer = ui.Map.Layer({name: 'area selection tool', visParams: { color:'yellow' }})
+  this.selection = null
+  this.active = false
+  this.points = []
+  this.area = null
+  
+  this.listeners = []
+
+  var tool = this;
+  
+  this.initialize = function() {
+    this.map.onClick(this.onMouseClick)
+    this.map.layers().add(this.layer)
+  }
+  
+  this.startDrawing = function() {
+    this.active = true
+    this.points = []
+
+    this.map.style().set('cursor', 'crosshair');
+    this.layer.setShown(true)
+  }
+  
+  this.stopDrawing = function() {
+    tool.active = false
+    tool.map.style().set('cursor', 'hand');
+
+    tool.area = ee.Geometry.Polygon(tool.points)
+    tool.layer.setEeObject(tool.area)
+
+    tool.listeners.map(function(listener) {
+      listener(tool.area)
+    })
+  }
+  
+  /***
+   * Mouse click event handler
+   */
+  this.onMouseClick = function(coords) {
+    if(!tool.active) {
+      return
+    }
+    
+    tool.points.push([coords.lon, coords.lat])
+
+    var geom = tool.points.length > 1 ? ee.Geometry.LineString(tool.points) : ee.Geometry.Point(tool.points[0])
+    tool.layer.setEeObject(geom)
+    
+    var l = ee.Geometry.LineString([tool.points[0], tool.points[tool.points.length-1]]).length(1).getInfo()
+
+    if(tool.points.length > 1 && l / Map.getScale() < 5) {
+       tool.stopDrawing()
+    }
+  }
+  
+  /***
+   * Adds a new event handler, fired on feature selection. 
+   */
+  this.onFinished = function(listener) {
+    tool.listeners.push(listener)
+  }
+  
+  this.initialize()
+}
+
+exports.DrawAreaTool = DrawAreaTool
+exports.DrawTransectTool = DrawTransectTool

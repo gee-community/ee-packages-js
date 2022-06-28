@@ -1,0 +1,213 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var no2 = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2"),
+    ne = ee.Image("users/gena/NE1_HR_LC_SR_W"),
+    land = ee.Image("users/gena/land_polygons_image"),
+    imageVisParam = {"opacity":1,"bands":["tropospheric_NO2_column_number_density"],"min":-12.04534406645695,"max":-9.18279624832298,"gamma":1},
+    imageVisParam2 = {"opacity":1,"bands":["NO2_column_number_density"],"min":-4.206929117353018,"max":-3.831849105893592,"gamma":1},
+    imageVisParam3 = {"opacity":1,"bands":["NO2_column_number_density"],"min":-4.2106755186376645,"max":-3.901609263039188,"gamma":1},
+    imageVisParam4 = {"opacity":1,"bands":["NO2_column_number_density"],"min":-4.523137513320669,"max":-3.4607466049523965,"gamma":1};
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var gl = require('users/gena/packages:gl')
+var palettes = require('users/gena/packages:palettes')
+var style = require('users/gena/packages:style')
+var animation = require('users/gena/packages:animation')
+var utils = require('users/gena/packages:utils')
+var g = require('users/gena/packages:geometry')
+var tiler = require('users/gena/packages:tiler')
+
+var dem = ee.Image("JAXA/ALOS/AW3D30/V2_2").select('AVE_DSM')
+// var dem = ee.Image("USGS/NED")
+
+
+// var weight = 1.0
+// var extrusion = 30
+// var sunAzimuth = 315
+// var sunElevation = 15
+// var contrast = 0
+// var brightness = 0
+// var saturation = 0.25
+// var shadows = true
+
+// var styled = ne.visualize({ gamma: 0.3, min: 0, max: 255 })
+// dem = dem.unmask(0, false).multiply(land.mask())
+
+var weight = 0.6
+var extrusion = 100
+var sunAzimuth = 315// + 90
+var sunElevation = 25
+var contrast = 0
+var brightness = 0
+var saturation = 0.5
+// var shadows = true
+var shadows = false
+
+var styled = ne.visualize({ min: 0, max: 255 })
+dem = dem.updateMask(land.mask()).blend(ee.Image(0).float().updateMask(land.mask().not()))
+
+
+var demHillshaded = utils.hillshadeRGB(styled, dem, weight, extrusion, sunAzimuth, sunElevation, contrast, brightness, saturation, shadows)
+
+// Map.addLayer(demHillshaded, {}, 'dem (hillshade)')
+
+
+Map.setOptions('HYBRID')
+// Map.setOptions('TERRAIN')
+// style.SetMapStyleDark()
+
+// var no2Var = 'tropospheric_NO2_column_number_density'
+var no2Var = 'NO2_column_number_density'
+
+// var palette = palettes.matplotlib.magma[7]
+// var palette = ["#000004","#2C105C","#711F81","#B63679","#EE605E","#FDAE78","#FCFDBF"]
+
+var palette = palettes.crameri.roma[50].slice(0).reverse()//.slice(15)
+
+var vis = {
+  // min: 0.00006, max: 0.00015,
+  min: -4.7, max: -3.5,
+  palette: palette
+}
+
+// var vis = {
+//   min: 0.00001, max: 0.0004,
+//   palette: palette
+// };
+
+
+no2 = no2.select([no2Var, 'cloud_fraction'])
+
+function resample(images) {
+  return images.map(function(i) { return i.resample('bicubic') })
+}
+
+var start = ee.Date('2020-02-01')
+
+var timeStep = 1 // days
+// var timeMax = 7 * 40
+var timeMax = 7 * 9
+var timeWindow = -4 // duration to look back in days
+
+var dates = ee.List.sequence(0, timeMax, timeStep).map(function(offset) {
+  return start.advance(offset, 'day')
+})
+
+function maskClouds(i) {
+  var mask = gl.smoothstep(0, 0.05, i.select('cloud_fraction'))
+  return i.updateMask(mask)
+}
+
+function smoothen(i) {
+  return i.convolve(ee.Kernel.gaussian(10000, 5000, 'meters'))//.updateMask(i.mask().convolve(ee.Kernel.gaussian(30000, 25000, 'meters')))
+    .copyProperties(i, ['system:time_start'])
+}
+
+no2 = no2.filterDate(start.advance(timeWindow-56, 'day'), start.advance(timeMax, 'day'))
+  .map(smoothen)
+  .map(maskClouds)
+  .select(no2Var)
+
+print(no2.first())
+
+var images = dates.map(function(t) {
+  t = ee.Date(t)
+  var imagesSample = no2.filterDate(t.advance(timeWindow, 'day'), t)
+    .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-7, 'day'), t.advance(-7, 'day')))  
+    .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-14, 'day'), t.advance(-14, 'day')))
+    .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-21, 'day'), t.advance(-21, 'day')))
+    .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-28, 'day'), t.advance(-28, 'day')))
+    // .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-35, 'day'), t.advance(-35, 'day')))
+    // .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-42, 'day'), t.advance(-42, 'day')))
+    // .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-49, 'day'), t.advance(-49, 'day')))
+    // .merge(no2.filterDate(t.advance(timeWindow, 'day').advance(-56, 'day'), t.advance(-56, 'day')))
+
+  var i = imagesSample
+    // .median()
+    // .reduce(ee.Reducer.percentile([75]))
+    .mean()
+    .log10()
+    // .unmask(0, false)
+  return i.set({ 
+    count: imagesSample.size(), 
+    'system:time_start': t.millis() 
+  })
+})
+
+images = ee.ImageCollection(images).filter(ee.Filter.gt('count', 0))
+
+Map.addLayer(images.first(), {}, 'first', false)
+Map.addLayer(images, {}, 'images', false)
+// throw(0)
+
+var images = images.map(function(i) {
+  var t = i.date()
+  
+  var mask = gl.smoothstep(vis.min, vis.min + (vis.max - vis.min) * 0.75, i)//.multiply(0.9)
+  // var mask = i.unitScale(0, vis.min).add(0.1).multiply(0.9)
+  
+  return ee.ImageCollection([
+    demHillshaded.visualize({ forceRgbOutput: true }), 
+    ee.Image(1).byte().mask(0.75).visualize({ palette: ['000000'], forceRgbOutput: true }),
+    i.updateMask(mask).visualize(vis)
+  ]).mosaic().set({ 
+    label: t.format('YYYY-MM-dd'),
+    'system:time_start': i.get('system:time_start')
+  })
+})
+
+// Map.addLayer(images.first())
+// throw(0)
+
+animation.animate(images, { label: 'label', maxFrames: 150 })
+
+
+var dates = ee.List(images.aggregate_array('system:time_start')).map(
+  function(x) {
+    return ee.Date(x).format('YYYY-MM-dd')
+  }
+)
+
+function exportFrames(frames, region, bucket, prefix) {
+  var maxZoom = 6
+  
+  var frameList = frames.toList(frames.size())
+  
+  var enumerate = ee.List.sequence(0, frames.size())
+
+  function exportFrame(i, frame) {
+    // Convert frame counter to 5 padded string
+    var frameId = utils.pad(i, 5)
+    var task = prefix + '-' + frameId
+    var path = prefix + '/' + frameId
+  
+    Export.map.toCloudStorage({
+      image: frame, 
+      description: task, 
+      bucket: bucket, 
+      fileFormat: 'png', 
+      path: path,
+      minZoom: 0, 
+      maxZoom: maxZoom,
+      region: region,
+      writePublicTiles: false,
+      skipEmptyTiles: true
+    })
+  }
+  
+  enumerate.evaluate(function(indices) {
+    indices.map(function(i) {
+      var image = ee.Image(frameList.get(i))
+      
+      exportFrame(i, image)
+    })
+  })
+  
+}
+
+var bucket = 'deltares-video-map'
+var prefix = 'no2-timelapse'
+var region = g.getGlobalGeometry()
+exportFrames(images, region, bucket, prefix)
+
+Map.onChangeZoom(function(z) {
+  print(z)
+})

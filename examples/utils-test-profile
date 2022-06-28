@@ -1,0 +1,26 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var images = ee.ImageCollection("COPERNICUS/S2"),
+    line = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.LineString(
+        [[-107.19901084637968, 33.26215915196785],
+         [-107.17866897321073, 33.258857714299204],
+         [-107.14244842267362, 33.24213329838942]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var utils = require('users/gena/packages:utils')
+
+Map.centerObject(line)
+
+var image = ee.Image(images.filterBounds(line.centroid(1)).first())
+
+var profile = utils.reduceImageProfile(image, line, ee.Reducer.mean(), Map.getScale())
+
+print(ui.Chart.feature.byFeature(profile, 'distance'))

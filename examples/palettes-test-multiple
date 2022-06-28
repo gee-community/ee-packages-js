@@ -1,0 +1,93 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.LineString(
+        [[5.413888688521411, 53.168906784111435],
+         [5.415390730552872, 53.16897110070959]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var palettes = require('users/gena/packages:palettes')
+var utils = require('users/gena/packages:utils')
+
+var dem = ee.Image("AHN/AHN2_05M_RUW");
+//var dem = ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic') 
+
+// dem = dem.convolve(ee.Kernel.gaussian(0.5, 0.3, 'meters'))
+
+var minMax = dem.reduceRegion(ee.Reducer.percentile([1, 99]), Map.getBounds(true), Map.getScale()).values()
+
+var min = ee.Number(minMax.get(0))
+var max = ee.Number(minMax.get(1))
+
+var exaggregate = 10
+var weight = 1.5
+var azimuth = 0
+var zenith = 25
+
+// Paired
+var styled = dem.visualize({ min: min, max: max, palette: palettes.colorbrewer.Paired[12] })
+Map.addLayer(styled, {}, 'Paired, styled', false)
+
+
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Paired, hillshaded', false)
+
+// Set1
+var styled = dem.visualize({ min: min, max: max, palette: palettes.colorbrewer.Set1[9] })
+Map.addLayer(styled, {}, 'Set1, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Set1, hillshaded', false)
+
+// BrBG
+var styled = dem.visualize({ min: max, max: min, palette: palettes.colorbrewer.BrBG[8] })
+Map.addLayer(styled, {}, 'BrBG, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'BrBG, hillshaded')
+
+// Spectral
+var styled = dem.visualize({ min: max, max: min, palette: palettes.colorbrewer.Spectral[11] })
+Map.addLayer(styled, {}, 'Spectral, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Spectral, hillshaded', false)
+
+
+// Accent 8
+var styled = dem.visualize({ min: min, max: max, palette: palettes.colorbrewer.Accent[8] })
+Map.addLayer(styled, {}, 'Accent 8, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Accent 8, hillshaded', false)
+
+// Accent 3
+var styled = dem.visualize({ min: min, max: max, palette: palettes.colorbrewer.Accent[3] })
+Map.addLayer(styled, {}, 'Accent 3, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Accent 3, hillshaded', false)
+
+
+// show all palettes
+//palettes.showPalettes(7, palettes.colorbrewer)
+
+palettes.showPalettes(7, palettes.cmocean)
+
+// add a gradient bar
+var textProperties = { fontSize:16, textColor: '000000', outlineColor: 'ffffff', outlineWidth: 2, outlineOpacity: 0.6 }
+
+var palette = palettes.colorbrewer.Paired[12]
+
+var style = require('users/gena/packages:style')
+
+var labels = ee.List.sequence(min, max, max.subtract(min).divide(5))
+var gradient = style.GradientBar.draw(geometry, {
+  min: min, max: max, palette: palette, labels: labels, format: '%.1f', text: textProperties, precision: 100
+})
+Map.addLayer(gradient, {}, 'gradient bar (DEM)')

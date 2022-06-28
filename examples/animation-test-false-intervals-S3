@@ -1,0 +1,143 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var s3 = ee.ImageCollection("COPERNICUS/S3/OLCI"),
+    viirs = ee.ImageCollection("NOAA/VIIRS/001/VNP09GA"),
+    mod = ee.ImageCollection("MODIS/006/MOD09GA"),
+    myd = ee.ImageCollection("MODIS/006/MYD09GA"),
+    proba100 = ee.ImageCollection("VITO/PROBAV/C1/S1_TOC_100M"),
+    proba333 = ee.ImageCollection("VITO/PROBAV/C1/S1_TOC_333M");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var start = '2020-04-30'
+var stop = '2020-06-01'
+
+var animation = require('users/gena/packages:animation')
+
+var bandNames = ['swir', 'nir', 'red', 'green', 'blue']
+
+var bounds = ee.Geometry(Map.getBounds(true))
+
+var visSNG = {bands: ['swir', 'nir', 'red'], min: 0.1, max: 0.7, gamma: 1}
+var visRGB = {bands: ['red', 'green', 'blue' ], min: 0.1, max: 1.3, gamma: 1}
+
+// var vis = visRGB
+var vis = visSNG
+
+
+var OLCI_scale = ee.Image([0.0139465,0.0133873,0.0121481,0.0115198,0.0100953,
+                           0.0123538,0.00879161,0.00876539,0.0095103,0.00773378,
+                           0.00675523,0.0071996,0.00749684,0.0086512,0.00526779,
+                           0.00530267,0.00493004,0.00549962,0.00502847,0.00326378,0.00324118]);
+
+var bnames = ['Oa01_radiance','Oa02_radiance','Oa03_radiance','Oa04_radiance','Oa05_radiance',
+              'Oa06_radiance','Oa07_radiance','Oa08_radiance','Oa09_radiance','Oa10_radiance',
+              'Oa11_radiance','Oa12_radiance','Oa13_radiance','Oa14_radiance','Oa15_radiance',
+              'Oa16_radiance','Oa17_radiance','Oa18_radiance','Oa19_radiance','Oa20_radiance','Oa21_radiance'];
+
+function applyGain(image){
+  var tmp = image.select(bnames).multiply(OLCI_scale)
+  return image.addBands({srcImg: tmp, overwrite: true})
+    .select(['Oa21_radiance', 'Oa16_radiance', 'Oa08_radiance', 'Oa06_radiance', 'Oa04_radiance'], bandNames)
+    .set({ SENSOR: 'S3'})
+}
+
+s3 = s3.filterDate(start, stop)
+  .filterBounds(bounds.centroid(1))
+  .map(applyGain)
+  // .select(['Oa21_radiance', 'Oa16_radiance', 'Oa08_radiance', 'Oa06_radiance', 'Oa04_radiance'], bandNames)
+  // .map(function(i) { 
+  //   return i.resample('bicubic').multiply(ee.Image.constant([0.00324118, 0.00530267, 0.00876539, 0.0123538, 0.0115198])).copyProperties(i, ['system:time_start']).set({ SENSOR: 'S3'}) 
+  // })
+ 
+// s3 = s3.select(['Oa12_radiance', 'Oa08_radiance', 'Oa04_radiance'])  
+
+viirs = viirs.filterDate(start, stop)
+   .select(['M8', 'M7', 'I1', 'M4', 'M3'], ['swir', 'nir', 'red', 'green', 'blue'])
+   .map(function(i) { return i.multiply(0.0001).copyProperties(i, ['system:time_start']).set({ SENSOR: 'VIIRS'}) })
+
+mod = mod.filterDate(start, stop)
+  .select(['sur_refl_b05', 'sur_refl_b02', 'sur_refl_b01', 'sur_refl_b04', 'sur_refl_b03'], bandNames)
+  .map(function(i) { return i.multiply(0.0001).copyProperties(i, ['system:time_start']).set({ SENSOR: 'MODIS (Terra)'}) })
+
+myd = myd.filterDate(start, stop)
+  .select(['sur_refl_b05', 'sur_refl_b02', 'sur_refl_b01', 'sur_refl_b04', 'sur_refl_b03'], bandNames)
+  .map(function(i) { return i.multiply(0.0001).copyProperties(i, ['system:time_start']).set({ SENSOR: 'MODIS (Aqua)'}) })
+
+proba100 = proba100.filterDate(start, stop)
+  .select(['SWIR', 'NIR', 'RED'], ['swir', 'nir', 'red'])
+  .map(function(i) { return i.copyProperties(i, ['system:time_start']).set({ SENSOR: 'PROBA100'}) })
+
+proba333 = proba333.filterDate(start, stop)
+  .select(['SWIR', 'NIR', 'RED'], ['swir', 'nir', 'red'])
+  .map(function(i) { return i.copyProperties(i, ['system:time_start']).set({ SENSOR: 'PROBA100'}) })
+
+
+// var images = s3
+
+var images = s3
+  .merge(proba100)
+  .merge(proba333)
+  // .merge(viirs)
+  // .merge(mod)
+  // .merge(myd)
+  .sort('system:time_start')
+
+print(images.size())
+
+var assets = require('users/gena/packages:assets')
+
+var bounds = Map.getBounds(true)
+// images = assets.getMostlyCleanImages(images, bounds)
+
+
+// just raw images
+animation.animate(images.map(function(i) { 
+  return i.set({label: i.date().format().cat(', ').cat(i.get('SENSOR')) })}), 
+  {vis: vis, label: 'label', maxFrames: 100})
+
+throw('stop')
+
+var visSNG = {bands: ['swir', 'nir', 'green'], min:300, max:[9000, 9000, 9000], gamma: 1.8}
+var visRGB = {bands: ['red', 'green', 'blue'], min:300, max:[9000, 9000, 9000], gamma: 1.8}
+
+viirs = viirs.filterDate(start, stop)
+   .select(['M8', 'M7', 'I1', 'M4', 'M3'], ['swir', 'nir', 'red', 'green', 'blue'])
+   .map(function(i) { return i.set({label: i.date().format() }) })
+
+// animation.animate(viirs, {vis: visRGB, label: 'label', maxFrames: 100})
+// throw('stop')
+
+// s3 = s3.map(function(i) {
+//   return i.updateMask(ee.Image(1).subtract(i.select('green').unitScale(100, 150).clamp(0, 1)))
+// })
+  
+var images = ee.List.sequence(1, 15).map(function(d) {
+  var start = ee.Date.fromYMD(2019, 10, 1).advance(d, 'day')
+  var stop = start.advance(2, 'day')
+  
+  var image = s3.filterDate(start, stop)
+    .mean()
+    // .reduce(ee.Reducer.percentile([10]))
+    //.reduce(ee.Reducer.intervalMean(15, 25))
+    .rename(bandNames)
+    
+  return image
+    .set({label: start.format('YYYY-MM-dd').cat('...').cat(stop.format('YYYY-MM-dd'))})
+})
+
+images = ee.ImageCollection(images)
+
+
+var visSNG = {bands: ['swir', 'nir', 'green'], min:30, max:[100, 100, 200], gamma: 1.8}
+var visRGB = {bands: ['red', 'green', 'blue' ], min:30, max:[100, 100, 200], gamma: 1.8}
+
+//animation.animate(images, {vis: visSNG})
+//animation.animate(images, {vis: visRGB, label: 'label'})
+
+animation.animate(s3.map(function(i) { return i.set({label: i.date().format() })}), {vis: visRGB, label: 'label', maxFrames: 100})
+  

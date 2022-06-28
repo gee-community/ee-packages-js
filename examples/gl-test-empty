@@ -1,0 +1,26 @@
+// Shadertoy ray marching tutorial: https://www.youtube.com/watch?v=yxNnRSefK94
+
+Map.setCenter(0, 0, 15)
+
+var gl = require('users/gena/packages:gl').init()
+
+function render(time) {
+  var uv = gl.fragCoord.divide(gl.iResolution.xy)
+
+  // make coordinates go from -1 to 1
+  //uv = uv.multiply(2).subtract(1)
+
+  return uv.addBands(0)
+  
+  return color
+}
+
+// ==================================
+Map.setLocked(true)
+
+var vis = { min: 0, max: 1 }
+
+// var vis = { min: -1, max: 1 }
+
+var image = render(0)
+Map.addLayer(image, vis, 'image')

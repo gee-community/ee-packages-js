@@ -1,0 +1,85 @@
+// Shadertoy ray marching tutorial: https://www.youtube.com/watch?v=yxNnRSefK94
+
+var gl = require('users/gena/packages:gl')
+
+/***
+ * Signed distance function for a 3D space filled with spheres
+ */
+function sdfSpace(p) {
+  var q = gl.fract(p).multiply(2).subtract(1)
+  
+  return gl.length(q).subtract(0.25)
+}
+
+/***
+ * Raymarching 
+ * 
+ * o - origin
+ * r - ray
+ */
+function trace(o, r) {
+  var t = ee.Image.constant(0.0);
+  
+  var i = ee.List.sequence(0, 32, 1)
+  
+  t = i.iterate(function(i, prev) {
+    prev = ee.Image(prev)
+    var p = o.add(r.multiply(prev))
+    var d = sdfSpace(p)
+    prev = prev.add(d.multiply(0.5))
+    return prev
+  }, t)
+  
+  return ee.Image(t)
+}
+
+/***
+ * Main rendering function
+ */
+function render(time) {
+  var info = gl.init(Map.getBounds(true))
+
+  var uv = info.fragCoord.divide(info.iResolution.xy)
+  time = ee.Number(time)
+
+  // make coordinates go from -1 to 1
+  uv = uv.multiply(2).subtract(1)
+  
+  // set aspect ratio
+  uv = uv.multiply(ee.Image([info.iResolution.x.divide(info.iResolution.y), 1.0]))
+
+  // use time to move origin along z axis and to rotate
+  var z = ee.Number(time).multiply(0.5)
+
+  // normalize ray, FOV=90
+  var r = gl.normalize(uv.addBands(ee.Image.constant(1).rename('z')))
+  
+  // rotate r around y axis
+  var angle = time.multiply(Math.PI / 4)
+  r = gl.rotate(r, ['x', 'z'], angle)
+  
+  // origin
+  var o = ee.Image([0, z, z])
+  
+  // render
+  var t = trace(o, r)
+  
+  // fog function 1/(1 + 0.1 * t^2)
+  var fog = ee.Image.constant(1).divide(ee.Image.constant(1.0).add(t.multiply(t).multiply(0.1)))
+
+  return fog
+}
+
+// ==================================
+Map.setCenter(0, 0, 15)
+Map.setLocked(true)
+
+var vis = { min: 0, max: 1 }
+
+// var image = render(0)
+// Map.addLayer(image, vis, 'image')
+
+var animation = require('users/gena/packages:animation')
+var images = ee.List.sequence(0, 2-0.0001, 0.05).map(function(t) { return render(t) })
+animation.animate(images, { vis: vis, timeStep: 50, maxFrames: 100 })
+

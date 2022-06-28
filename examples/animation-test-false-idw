@@ -1,0 +1,224 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var goes16 = ee.ImageCollection("NOAA/GOES/16/FDCF"),
+    goes17 = ee.ImageCollection("NOAA/GOES/17/FDCF");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var animation = require('users/gena/packages:animation')
+var assets = require('users/gena/packages:assets')
+var palettes = require('users/gena/packages:palettes')
+
+var start = ee.Date("2019-10-20")
+var stop = ee.Date("2019-11-03")
+
+// add GOES images to map
+var goes = goes16.filterDate(start, stop).select('Temp')
+  .merge(goes17.filterDate(start, stop).select('Temp'))
+
+goes = goes.map(function(i) {
+  i = i.unmask().resample('bicubic')
+  i = i.updateMask(i.unitScale(500, 5000))
+  // i = i.updateMask(i.gt(0))
+  // i = i.set({ label: i.date().format() })
+  return i
+})
+
+// animation.animate(goes.sort('system:time_start'), {vis: { min: 300, max: 5000 }})  
+
+// throw(0)
+
+
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var bounds = ee.Geometry(Map.getBounds(true))
+
+// get images from one or multiple missions
+var images = assets.getImages(bounds, {
+  //filter: ee.Filter.date("1985-01-01", "1995-01-01"),
+  //filter: ee.Filter.date("2016-01-01", "2020-01-01"),
+  filter: ee.Filter.date(start, stop),
+  
+  //filter: ee.Filter.date("2015-01-01", "2020-01-01"),
+  //filter: ee.Filter.date("2000-01-01", "2020-01-01"),
+  //filter: ee.Filter.date("2002-01-01", "2007-01-01"),
+  //filter: ee.Filter.date("2016-01-01", "2020-01-01"),
+  //filter: ee.Filter.date("2015-01-01", "2019-02-01"),
+  //resample: true,
+  //filterMasked: true,
+  missions: [
+    'S2', 
+    'L8', 
+    'L7',
+    // 'L5',
+    // 'L4'
+  ]
+})
+
+print('Count: ', images.size())
+
+var bandNames = ['swir', 'nir', 'red', 'green', 'blue']
+var s3 = ee.ImageCollection("COPERNICUS/S3/OLCI")
+  .filterBounds(Map.getBounds(true))
+  .filterDate(start, stop)
+  .select(['Oa21_radiance', 'Oa16_radiance', 'Oa08_radiance', 'Oa06_radiance', 'Oa04_radiance'], bandNames)
+  .map(function(i) { return i.resample('bicubic').multiply(ee.Image.constant([0.00324118, 0.00530267, 0.00876539, 0.0123538, 0.0115198]))
+    .addBands(ee.Image.constant(0.2).rename('w').float().updateMask(i.select(0).mask()))
+    .set('system:time_start', i.get('system:time_start')).set('MISSION', 'S3') })
+
+images = images.select(bandNames).map(function(i) {
+  return i.addBands(ee.Image.constant(1).rename('w').float().updateMask(i.select(0).mask()))
+})
+
+images = images.map(function(i) {
+  return i.updateMask(i.mask().reduce(ee.Reducer.allNonZero()))
+})
+
+// images = images.merge(s3)
+
+// images = images.map(function(i) { 
+//   return i.visualize({bands:['swir','nir','red'], gamma: 2, min: 0.07})
+//     .set({ label: i.date().format('YYYY-MM-dd') })
+// })
+// animation.animate(images.sort('system:time_start'), {label: 'label', maxFrames: 300, vis: { min: 0, max: 1 }})  
+
+// throw(0)
+
+//var bands = ['red','green','blue']
+var bands = ['swir', 'nir', 'red']
+
+// images = images.select(bands)
+
+if(0) {
+  // filter out noisy images
+  images = assets.getMostlyCleanImages(images, bounds, {
+      scale: Map.getScale() * 10, 
+      
+      // how much should we deviate from cloud frequency when filtering images, use negative value to allow more (cloudy) images
+      cloudFrequencyThresholdDelta: 0.05,
+  
+      // percentile and band used for cloudness, usually enough to choose one like green    
+      scorePercentile: 95,
+      qualityBand: 'green',
+    })
+  
+  print('Count: ', images.size())
+  
+  // images = images.filterDate('2018-12-31', '2020-01-01')
+}
+
+// images = ee.FeatureCollection(images).randomColumn('random').filter(ee.Filter.gt('random', 0.9))
+// images = ee.ImageCollection(images)
+
+// print('Count (random filtered): ', images.size())
+
+// images = images
+//   .sort('system:time_start')
+  //.sort('quality')
+
+// images = images
+//   .map(function(i) {
+//     var image = i
+//     //var image = images.filterDate(i.date(), i.date().advance(-1, 'month')).mosaic()
+    
+//     var s = Map.getScale()
+//     var r = s * 4
+//     var σ = s * 2
+//     // image = image.subtract(image.convolve(ee.Kernel.gaussian(r, σ, 'meters')).convolve(ee.Kernel.laplacian8(3))) // LoG
+
+//     // false-color index
+//     var ndwi = image.normalizedDifference(['green', 'nir']).unitScale(-0.1, 0.5)
+//     var mndwi = image.normalizedDifference(['green', 'swir']).unitScale(-0.1, 0.5)
+//     var ndvi = image.normalizedDifference(['red', 'nir']).unitScale(-0.1, 0.5)
+    
+//     // return ee.Image([ndvi, ndvi, mndwi]).visualize({})
+  
+//     //return image.visualize({bands:['red','green','blue'], gamma: 1.8, min:0.05, max:[0.5, 0.5, 0.55]})
+//     //return image.normalizedDifference(['green', 'nir']).visualize({palette:palettes.cb.Blues[9], min: -0.1, max: 0.3})    
+//     // return image.visualize({bands:['swir','nir','red'], gamma: 1.4, min: 0.07, max: 0.6})
+
+//     // band fiddling
+//     // image = image.subtract(image.convolve(ee.Kernel.gaussian(Map.getScale()*2, Map.getScale(), 'meters')).convolve(ee.Kernel.laplacian8(1))) // LoG
+
+//     var enhanceNir = 0
+//     //var enhanceNir = 1
+    
+//     if(enhanceNir) {
+//       image = image.select(bands).add(ee.Image([
+//       //image = image.select(['red', 'green', 'blue']).add(ee.Image([
+//         ee.Image(0).float(), 
+//         image.select('nir'), 
+//         ee.Image(0).float(), 
+//         // ndwi.multiply(0.15)
+//       ]))
+//     //image = image.visualize({bands:bands, min: [0.05, 0.1, 0.1], max: [0.5, 1.0, 0.4], gamma: 1.6 })
+//     }
+    
+//     // image = image.visualize({bands:bands, min: 0.01, max: 0.5, gamma: 1.2 })
+    
+//     var blendWater = 1
+//     // var blendWater = 0
+    
+//     if(blendWater) {
+//       var water = ee.Image([ndwi, ndvi, mndwi])
+//       water = water.mask(water.reduce(ee.Reducer.max()).pow(2))
+      
+//       // image = image.blend(water.visualize().updateMask(0.5))
+//     }
+      
+//     // image = image.blend(mndwi.mask(mndwi).visualize({ palette: ['00ffff'], min: 0, max: 1 }))
+      
+//     return image
+//       .set({ label: i.date().format('YYYY-MM-dd').cat(' ').cat(i.get('MISSION')) })
+//       .set({ 'system:time_start': i.date().millis() })
+//   })
+
+
+images = ee.List.sequence(0, 12, 0.1).map(function(d) {
+  var t1 = ee.Date.fromYMD(2019, 10, 24).advance(d, 'day')
+  var t0 = t1.advance(-4, 'day')
+  
+  var s = images.filterDate(t0, t1)
+    // .sort('system:time_start', false)
+  
+  s = s.map(function(i) {
+    var w = ee.Image.constant(1).float().divide(ee.Image.constant(t1.millis().subtract(i.date().millis())).pow(2)).rename('w').float()
+      // .multiply(i.select('w'))
+      .updateMask(i.select(0).mask())
+
+    return i.addBands(w)
+  })
+  
+  s = s.map(function(i) { return i.select(bands).multiply(i.select('w')) }).sum()
+    .divide(s.select('w').sum()).rename(bands)
+    
+  var fire = goes.filterDate(t0.advance(-120, 'minute'), t0).max().unitScale(500, 5000)
+    .visualize({min: 0, max: 1, opacity: 0.7, palette: palettes.cb.YlOrRd[9].slice(0).reverse() })
+    
+  return s.visualize({bands:bands, min: 0.01, max: 0.5, gamma: 1.2 })
+    .blend(fire)
+    .set({ label: t1.format('YYYY-MM-dd HH:mm') })
+})
+
+images = ee.ImageCollection(images)
+print(images.first())
+
+// animate
+animation.animate(images, {label: 'label', maxFrames: 200})  
+
+throw(0)
+
+// export video
+var utils = require('users/gena/packages:utils')
+utils.exportVideo(images, {
+  bounds: bounds, 
+  label: 'label', 
+  maxFrames: 600, 
+  name: 'animation', 
+  label: 'label', 
+  framesPerSecond: 10 
+})
+
+

@@ -1,0 +1,724 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// NOTE: this script is still very messy, it mainly contains a set of not well tested prototypes
+
+var style = require('users/gena/packages:style')
+var colorbrewer = require('users/gena/packages:colorbrewer')
+var palettes = require('users/gena/packages:palettes')
+var utils = require('users/gena/packages:utils')
+
+var HydroBASINS = {
+  1: { catchments: ee.FeatureCollection('users/gena/hybas_lev01_v1c') },
+  2: { catchments: ee.FeatureCollection('users/gena/hybas_lake_as_lev02_v1c') },
+  3: { catchments: ee.FeatureCollection('users/gena/hybas_lake_as_lev03_v1c') },
+  4: { catchments: ee.FeatureCollection('users/gena/hybas_lake_as_lev04_v1c') },
+  5: { catchments: ee.FeatureCollection('users/gena/hybas_lake_as_lev05_v1c'), index: ee.FeatureCollection("users/gena/HydroEngine/hybas_lev05_v1c_index") },
+  6: { catchments: ee.FeatureCollection('users/gena/HydroEngine/hybas_lev06_v1c').select(['HYBAS_ID'], ['hybas_id']), index: ee.FeatureCollection("users/gena/HydroEngine/hybas_lev06_v1c_index")  },
+  7: { catchments: ee.FeatureCollection('users/gena/HydroEngine/hybas_lev07_v1c') }
+}
+
+var land = ee.Image('users/gena/land_polygons_image').mask()
+
+var names = ee.Feature(HydroBASINS[5].catchments.first()).propertyNames()
+HydroBASINS[5].catchments = HydroBASINS[5].catchments.map(function(f) {
+  return f.select(names, names.map(function(s) { return ee.String(s).toLowerCase() }))
+})
+
+function getRivers(options) {
+ // Natural Earth
+ // return ee.FeatureCollection('users/gena/NaturalEarthRivers')
+
+  var rivers = ee.FeatureCollection('users/gena/HydroEngine/riv_15s_lev06')
+
+  // limit by given catchments
+  if(options && options.catchments) {
+    var ids = ee.List(options.catchments.aggregate_array('hybas_id'))
+
+    rivers = rivers.filter(ee.Filter.inList('HYBAS_ID', ids))
+  }
+    
+  if(options && options.maxFA) {
+    rivers = rivers.filter(ee.Filter.gt('UP_CELLS', options.maxFA))
+  }
+
+  // rivers = rivers.map(function(f) { return f.set('UP_CELLS_LOG', ee.Number(f.get('UP_CELLS')).log10())})
+
+  return rivers   
+}
+
+function getCatchments(options) {
+  if(typeof(options) === 'undefined') {
+    throw 'Specify at least level argument'
+  }
+  
+  var level = options.level || 6
+  var outlet = options.outlet || null
+
+  if(!(level in HydroBASINS)) {
+    throw 'HydroBASINS level is not supported yet: ' + level
+  }
+
+  var catchments = HydroBASINS[level].catchments
+
+  // limit by outlet
+  if(outlet) {
+    var current = catchments.filterBounds(outlet)
+    var id = ee.Feature(current.first()).get('hybas_id')
+    var upstreamIds = HydroBASINS[level].index.filter(ee.Filter.eq('hybas_id', id)).aggregate_array('parent_from')
+    upstreamIds = ee.List(upstreamIds).add(id)
+    catchments = catchments.filter(ee.Filter.inList('hybas_id', upstreamIds))
+  }
+
+  return catchments
+}
+
+function getCatchmentsByRiverName(name) {
+  var rivers = ee.FeatureCollection('users/gena/NaturalEarthRivers')
+
+  var river = rivers.filter(ee.Filter.eq('name', name))
+  var coords = river.geometry().coordinates()
+
+  // detect for outlet and inlet
+  var outlet = ee.Geometry.Point(coords.get(-5))
+  var inlet = ee.Geometry.Point(coords.get(5))
+
+  var catchmentsOutlet = getCatchments({level: 5, outlet: outlet})
+  var catchmentsInlet = getCatchments({level: 5, outlet: inlet})
+    
+  return catchmentsOutlet.merge(catchmentsInlet).distinct('hybas_id')
+}
+
+exports.getCatchments = getCatchments
+exports.getCatchmentsByRiverName = getCatchmentsByRiverName
+
+exports.getDams = function(options) {
+  var region = options && options.region || null
+
+  // dam locations collected from multiple databases
+  var damInfo = [
+    { name: 'OpenStreetMaps (points)', table: 'users/gena/eo-reservoirs/dams-2019-osm-point', color: 'blue'}, 
+    { name: 'OpenStreetMaps (lines)', table: 'users/gena/eo-reservoirs/dams-2019-osm-line', color: 'blue'}, 
+    // { name: 'AQUATAT', table: 'ft:1JEYbvAwi-hV915oLk4t4mNuhrdNU_kKQX-_HgGdW', color:'teal'}, // errorneous, was used as a main source for GRanD?
+    { name: 'GRanD', table: 'users/gena/eo-reservoirs/dams-GRaND', color: 'yellow'},
+    // { name: 'Wikipedia', table: 'ft:1FJikDoJpylgifMoiMCUcvadyaUX6jgh0Hub6IfX_', color: 'green'},
+    { name: 'NWIS (validation)', table: 'users/gena/eo-reservoirs/dams-NWIS', color: 'orange'},
+    { name: 'SARP', table: 'users/gena/eo-reservoirs/dams-SARP', color: 'pink'},
+    { name: 'King`s College London', table: 'users/gena/eo-reservoirs/dams-GOOD2', color: 'red'} // check license, seems to be free for research, but not for redistribution?
+  ]
+
+  var dams = ee.FeatureCollection([])
+
+  damInfo.map(function(dam) { 
+    dams = dams.merge(ee.FeatureCollection(dam.table).cache())
+  })
+
+  if(region) {
+    dams = dams.filterBounds(region)
+  }
+
+  return dams
+}
+
+var STYLE_DEM = '\
+  <RasterSymbolizer>\
+    <ColorMap  type="intervals" extended="false" >\
+      <ColorMapEntry color="#cef2ff" quantity="-200" label="-200m"/>\
+      <ColorMapEntry color="#9cd1a4" quantity="0" label="0m"/>\
+      <ColorMapEntry color="#7fc089" quantity="50" label="50m" />\
+      <ColorMapEntry color="#9cc78d" quantity="100" label="100m" />\
+      <ColorMapEntry color="#b8cd95" quantity="250" label="250m" />\
+      <ColorMapEntry color="#d0d8aa" quantity="500" label="500m" />\
+      <ColorMapEntry color="#e1e5b4" quantity="750" label="750m" />\
+      <ColorMapEntry color="#f1ecbf" quantity="1000" label="1000m" />\
+      <ColorMapEntry color="#e2d7a2" quantity="1250" label="1250m" />\
+      <ColorMapEntry color="#d1ba80" quantity="1500" label="1500m" />\
+      <ColorMapEntry color="#d1ba80" quantity="10000" label="10000m" />\
+    </ColorMap>\
+  </RasterSymbolizer>';
+
+var STYLE_HAND = '\
+  <RasterSymbolizer>\
+    <ColorMap  type="intervals" extended="false" >\
+      <ColorMapEntry color="#08306b" quantity="0" label=""/>\
+      <ColorMapEntry color="#9cd1a4" quantity="1" label=""/>\
+      <ColorMapEntry color="#9cd1a4" quantity="5" label=""/>\
+      <ColorMapEntry color="#b8cd95" quantity="10" label="" />\
+      <ColorMapEntry color="#d0d8aa" quantity="15" label="" />\
+      <ColorMapEntry color="#e1e5b4" quantity="30" label="" />\
+      <ColorMapEntry color="#f1ecbf" quantity="60" label="" />\
+      <ColorMapEntry color="#e2d7a2" quantity="90" label="" />\
+      <ColorMapEntry color="#d1ba80" quantity="300" label="" />\
+      <ColorMapEntry color="#d1ba80" quantity="500" label="" />\
+    </ColorMap>\
+  </RasterSymbolizer>';
+
+/***
+ * Configures layer options
+ */
+function getLayerOptions(options) {
+  var layer = {
+    visible: true,
+    opacity: 1.0,
+    name: '<layer name>'
+  }  
+  
+  if(options && typeof(options.layer) !== 'undefined') {
+    layer.visible = typeof(options.layer.visible) !== 'undefined' ? options.layer.visible : layer.visible
+    layer.opacity = typeof(options.layer.opacity) !== 'undefined' ? options.layer.opacity : layer.opacity
+    layer.name = typeof(options.layer.name) !== 'undefined' ? options.layer.name : layer.name
+  }
+  
+  return layer
+}
+
+/***
+ * Add styled map layers (DEM, HAND)
+ */
+exports.Map = {
+  addCatchmentsImage: function(level, edgesOnly) {
+    // Rasterized geometries on PFAF12 
+    // Author: rutgerhofste@gmail.com
+    var HydroBASINSimage = ee.Image("users/rutgerhofste/PCRGlobWB20V04/support/global_Standard_lev00_30sGDALv01");
+
+    var catchments = HydroBASINSimage.divide(ee.Number(10).pow(ee.Number(12).subtract(level))).floor();
+    catchments = catchments.unmask().focal_mode(625, 'circle', 'meters')
+  
+    var edges = ee.Algorithms.CannyEdgeDetector(catchments, 0.99, 0)//.focal_max(1).focal_mode(1)
+    edges = edges.mask(edges)
+
+    catchments = catchments.randomVisualizer().select([0, 1, 2])
+  
+    // var palette = ["a6cee3","1f78b4","b2df8a","33a02c","fb9a99","e31a1c","fdbf6f","ff7f00","cab2d6"]
+    // catchments = catchments.mod(palette.length).visualize({min: 0, max: palette.length-1, palette: palette})
+
+    if(edgesOnly) {
+      Map.addLayer(edges.visualize({ palette: ['ffffff'], forceRgbOutput: true }), {}, 'catchments (edges, level ' + level + ')', false)
+    } else {
+    
+      var name = 'catchments (level ' + level + ')';
+
+      Map.addLayer(catchments.blend(edges.visualize({ palette: ['ffffff'], forceRgbOutput: true })).updateMask(land), {}, name, false, 0.5)
+    }
+  },
+
+  addCatchments: function(options) {
+    var layer = getLayerOptions(options)
+    var outlet = options && options.outlet
+    var catchments = getCatchments({ outlet: outlet })
+
+    var color = (options.layer && options.layer.color) || 'black'
+
+    Map.addLayer(catchments, { color: color }, layer.name, layer.visible, layer.opacity)
+
+    return catchments
+  },
+  addHand: function(options) {
+    var region = (options && options.region) || null
+    
+    var dem = ee.Image('USGS/SRTMGL1_003')
+      .resample('bicubic')
+      
+      .convolve(ee.Kernel.gaussian(40, 35, 'meters'))
+      //.convolve(ee.Kernel.gaussian(30, 25, 'meters'))
+    
+    //var multiplier = 50.0;
+    //dem = peronaMalikFilter(dem.multiply(1/multiplier), 10, 0.01, 2).multiply(multiplier)
+
+
+    
+    // var hand = ee.ImageCollection('users/gena/global-hand/hand-100').mosaic()// .focal_mode(35, 'circle', 'meters')
+
+    var hand = ee.Image('users/gena/GlobalHAND/30m/hand-1000')
+
+    if(options && options.type === 'MERIT') {
+      hand = ee.Image('users/arjenhaag/SERVIR-Mekong/HAND_MERIT')
+    }
+
+    if(options && options.smoothing) {
+      hand = hand
+        .resample('bicubic')
+        .focal_min(20, 'circle', 'meters', 2)
+        .convolve(ee.Kernel.gaussian(25, 20, 'meters'))
+
+    }
+
+
+    //var multiplier = 50.0;
+    //hand = peronaMalikFilter(hand.multiply(1/multiplier), 20, 0.01, 2).multiply(multiplier)
+          
+    var colors_hand = ['023858', '006837', '1a9850', '66bd63', 'a6d96a', 'd9ef8b', 'ffffbf', 'fee08b', 'fdae61', 'f46d43', 'd73027'];
+    var rgb = hand.visualize({min:-1, max:50, palette:colors_hand})
+    
+    if(options && options.styleAsDem) {
+      rgb = hand.sldStyle(STYLE_HAND);
+    }
+    
+    var azimuth = 90;
+    var zenith = 20;
+    var weight = 1.1;
+    var heightMultiplier = 4;
+    var image = utils.hillshadeit(rgb, dem, weight, heightMultiplier, azimuth, zenith); 
+    
+    if(region) {
+      image = image.clip(region)
+    }
+    
+    var layer = getLayerOptions(options)
+    Map.addLayer(image, {}, layer.name, layer.visible, layer.opacity)
+    
+    return hand
+  },
+  
+  addDem: function(options) {
+    var region = null
+    var mask = null
+    
+    if(options) {
+      if(options.region) {
+        region = options.region
+      }
+      
+      if(options.mask) {
+        mask = options.mask
+      }
+    }
+    
+    var demAU = ee.ImageCollection('AU/GA/AUSTRALIA_5M_DEM').map(function(i) { return i.select(0).resample('bicubic') }).mosaic()
+
+    var dems = ee.ImageCollection.fromImages([
+        ee.Image("JAXA/ALOS/AW3D30/V2_2").select('AVE_DSM').resample('bicubic'),
+        // ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic'),
+        //ee.Image('USGS/SRTMGL1_003').float().resample('bicubic'),
+        //ee.Image('USGS/NED').float().resample('bicubic'),
+        ee.Image('AHN/AHN2_05M_RUW').float().resample('bicubic'),
+        //demAU
+    ])
+    
+    if(options.asset === 'ALOS') {
+      dems = ee.ImageCollection.fromImages([
+        ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic')
+      ])
+    } else if(options.asset === 'NED') {
+      dems = ee.ImageCollection.fromImages([
+        ee.Image('USGS/NED').resample('bicubic')
+      ])
+    } else if(options.asset === 'SRTM30') {
+      dems = ee.ImageCollection.fromImages([
+        ee.Image('USGS/SRTMGL1_003').float().resample('bicubic')
+      ])
+    }
+      
+    dems = ee.ImageCollection(dems)
+    
+    var image = dems.map(function(i) {
+      var rgb = i.sldStyle(STYLE_DEM);
+      
+      if(options && options.palette) {
+        rgb = i.visualize({min: options.min, max: options.max, palette: options.palette})
+      }
+    
+      var azimuth = 90;
+      var zenith = 20;
+      var weight = 1.1;
+      var heightMultiplier = 4;
+      
+      if(options.extrusion) {
+        heightMultiplier = options.extrusion
+      }
+      var image = utils.hillshadeit(rgb, i, weight, heightMultiplier, azimuth, zenith) 
+      
+      return image
+    }).mosaic()
+    
+
+    if(region) {
+      image = image.clip(region)
+    }
+    
+    if(mask) {
+      image = image.updateMask(mask)
+    }
+
+    image = image.updateMask(land)
+  
+    var layer = getLayerOptions(options)  
+    Map.addLayer(image, {}, layer.name, layer.visible, layer.opacity)
+    
+    return image
+  },
+
+  // TODO: quick copy, clean-up and merge with addDem
+  addDemDark: function(options) {
+    // var options = {region: catchments, layer: {visible: false, name: 'DEM'}}
+    var options = {layer: {visible: false, name: 'DEM'}, 
+      palette: ["d9d9d9","bdbdbd","969696","737373","525252","252525","000000"].reverse(),
+    }
+  
+    options.layer.name = (options && options.layer && options.layer.name) || 'DEM (dark)'
+
+    var STYLE_DEM = '\
+      <RasterSymbolizer>\
+        <ColorMap  type="intervals" extended="false" >\
+          <ColorMapEntry color="#cef2ff" quantity="-200" label="-200m"/>\
+          <ColorMapEntry color="#9cd1a4" quantity="0" label="0m"/>\
+          <ColorMapEntry color="#7fc089" quantity="50" label="50m" />\
+          <ColorMapEntry color="#9cc78d" quantity="100" label="100m" />\
+          <ColorMapEntry color="#b8cd95" quantity="250" label="250m" />\
+          <ColorMapEntry color="#d0d8aa" quantity="500" label="500m" />\
+          <ColorMapEntry color="#e1e5b4" quantity="750" label="750m" />\
+          <ColorMapEntry color="#f1ecbf" quantity="1000" label="1000m" />\
+          <ColorMapEntry color="#e2d7a2" quantity="1250" label="1250m" />\
+          <ColorMapEntry color="#d1ba80" quantity="1500" label="1500m" />\
+          <ColorMapEntry color="#d1ba80" quantity="10000" label="10000m" />\
+        </ColorMap>\
+      </RasterSymbolizer>';
+
+    var dems = ee.ImageCollection.fromImages([
+        ee.Image('JAXA/ALOS/AW3D30_V1_1').select('MED').resample('bicubic'),
+        //ee.Image('USGS/SRTMGL1_003').float().resample('bicubic'),
+        //ee.Image('USGS/NED').float().resample('bicubic'),
+        //ee.Image('AHN/AHN2_05M_RUW').float().resample('bicubic'),
+        //demAU
+    ])
+    
+    dems = ee.ImageCollection(dems)
+    
+    var image = dems.map(function(i) {
+      var rgb = i.sldStyle(STYLE_DEM);
+      
+      if(options && options.palette) {
+        rgb = i.visualize({min: options.min, max: options.max, palette: options.palette})
+      }
+      
+      if(options && options.imageRGB) {
+        rgb = options.imageRGB
+      }
+    
+      var azimuth = 315;
+      var zenith = 20;
+      var weight = 1.1;
+      
+      if(options && options.weight) {
+        weight = options.weight
+      }
+      
+      var heightMultiplier = 15;
+      
+      if(options.extrusion) {
+        heightMultiplier = options.extrusion
+      }
+      var image = utils.hillshadeRGB(rgb, i, weight, heightMultiplier, azimuth, zenith) 
+      
+      return image
+    }).mosaic()
+
+    // if(region) {
+    //   image = image.clip(region)
+    // }
+    
+    // if(mask) {
+    //   image = image.updateMask(mask)
+    // }
+  
+    var layer = getLayerOptions(options)  
+    Map.addLayer(image.updateMask(land), {}, layer.name, layer.visible, layer.opacity)
+  },
+
+  
+  addWaterOccurrence: function(options) {
+    if(options && options.type === 'JRC') {
+      var waterOccurrence = ee.Image('JRC/GSW1_0/GlobalSurfaceWater').select('occurrence').divide(100)
+      
+      var layer = getLayerOptions(options)
+      
+      Map.addLayer(waterOccurrence, {min: 0, max:1, palette: style.Palettes.RedToBlue }, 'JRC (1984-2015)', layer.visible, layer.opacity)
+
+      return waterOccurrence
+    }
+    
+    throw new 'Unsupported type'
+  },
+
+  addWaterOccurrenceMax: function(options) {
+    // water occurrence
+    var waterOccurrenceMonthly = ee.ImageCollection('JRC/GSW1_0/MonthlyHistory')
+
+    var years = ee.List.sequence(1985, 2015, 1)
+
+    // minimum number of images present within a year
+    var minImageCount = 5
+
+    // var proj = ee.Image(waterOccurrenceMonthly.first()).projection()
+
+    var waterOccurrenceAnnual = years.map(function(y) {
+      var start = ee.Date.fromYMD(y, 1, 1)
+      var stop = start.advance(1, 'year')
+  
+      var images = waterOccurrenceMonthly.filterDate(start, stop).map(function(i) {
+          return i.unmask(0)
+      })
+  
+      var waterCount = images.map(function(i) {
+        return i.eq(2)
+      }).sum()
+  
+      var totalCount =  images.map(function(i) {
+        return i.eq(1)
+      }).sum().add(waterCount)
+  
+      return waterCount.divide(totalCount).rename('occurrence').where(totalCount.lt(minImageCount), 0)
+        .addBands(totalCount.rename('count'))
+        //.reproject(proj)
+        //.resample('bilinear')
+    })
+
+    waterOccurrenceAnnual = ee.ImageCollection(waterOccurrenceAnnual)
+
+    var p = 100
+    if(options && options.percentile) {
+      p = options.percentile
+    }
+
+    var waterOccurrenceAnnualMax = waterOccurrenceAnnual.select('occurrence').reduce(ee.Reducer.percentile([p]))
+
+    var land = ee.Image("users/gena/land_polygons_image")
+
+    waterOccurrenceAnnualMax = waterOccurrenceAnnualMax
+      .mask(waterOccurrenceAnnualMax.pow(2).multiply(land.mask()))
+
+    if(options && options.mask) {
+      waterOccurrenceAnnualMax = waterOccurrenceAnnualMax.updateMask(options.mask)
+    }
+
+    Map.addLayer(waterOccurrenceAnnualMax, {min: 0, max: 1, palette: palettes.cb.YlOrRd[9].slice(0).reverse().slice(1) }, 'water occurrence annual max')
+  },
+  
+  addRivers: function(options) {
+    var rivers = ee.FeatureCollection('users/gena/HydroEngine/riv_15s_lev05')
+    
+    if(options && options.catchments) {
+      var ids = ee.List(options.catchments.aggregate_array('hybas_id'))
+
+      rivers = rivers
+        .filter(ee.Filter.inList('hybas_id', ids.map(function(id) { return ee.Number(id).format('%d') }))
+      )
+    }
+    
+    if(options && options.maxFA) {
+      rivers = rivers.filter(ee.Filter.gt('UP_CELLS', options.maxFA))
+    }
+
+    rivers = rivers.map(function(f) { return f.set('UP_CELLS_LOG', ee.Number(f.get('UP_CELLS')).log10())})
+    
+    var riversImage = ee.Image().int();
+    
+    var scale = Map.getScale()
+    
+    if(options && options.scale) {
+      scale = options.scale
+    }
+    
+    for(var th=1; th<8; th+=0.5) {
+      riversImage = riversImage.paint(rivers.filter(ee.Filter.gt('UP_CELLS_LOG', th)), 1, ee.Number(100).multiply(th).divide(scale) )
+    }
+    
+    if(options && options.region) {
+      riversImage = riversImage.clip(options.region)
+    }
+    
+    var layer = getLayerOptions(options)  
+    
+    var palette = ['0099CC']
+    
+    if(options && options.palette) {
+      palette = options.palette
+    }
+    
+    riversImage = riversImage.visualize({palette:palette})
+    
+    Map.addLayer(riversImage, {}, layer.name, layer.visible, layer.opacity)
+      
+    return riversImage
+  },
+  
+  addFlowAccumulation: function(options) {
+    var threshold = options.threshold || 1000
+    var scale = options.scale || 450
+    var palette = options.palette || colorbrewer.Palettes.GnBu[3]
+    var type = options.type || 'raster'
+
+    var layer = getLayerOptions(options)
+
+    if(type === 'raster') {
+      var fa = ee.Image('WWF/HydroSHEDS/15ACC')
+  
+      if(scale === 90) {
+        var fa = ee.Image('users/gena/GlobalHAND/90m-global/fa')
+      }
+  
+      fa = fa.mask(fa.gt(threshold))
+      
+      var faImage = ee.Image().float().paint(fa, 'UP_CELLS')
+      
+      if(options && options.width) {
+        faImage = ee.Image().float().paint(fa, 'UP_CELLS', options.width)
+      }
+
+      if(options && options.region) {
+        faImage = faImage.clip(options.region)
+      }
+      
+      faImage = faImage.visualize({min:1, max: threshold, palette: palette})
+      
+      Map.addLayer(faImage, {}, 'flow accumulation ' + scale, layer.visible, layer.opacity)
+
+      return faImage
+    }
+    
+    if(type === 'vector') {
+      var fa = ee.FeatureCollection('users/gena/HydroEngine/riv_15s_lev05')
+      
+      fa = fa.filter(ee.Filter.gt('UP_CELLS', threshold))
+      
+      var faImage = ee.Image().float().paint(fa, 'UP_CELLS')
+
+      if(options && options.width) {
+        faImage = ee.Image().float().paint(fa, 'UP_CELLS', options.width)
+      }
+      
+      if(options && options.region) {
+        faImage = faImage.clip(options.region)
+      }
+      
+      faImage = faImage.visualize({min:0, max: threshold, palette: palette})
+      
+      Map.addLayer(faImage, {}, 'flow accumulation, UP > ' + threshold, layer.visible, layer.opacity)
+      
+      return faImage
+    }
+  },
+}
+
+function getWaterOccurrenceAsVector(region, threshold) {
+  threshold = threshold || 0.95
+  
+  var o = ee.Image('JRC/GSW1_0/GlobalSurfaceWater').select('occurrence').divide(100)
+    .clamp(0, threshold)
+  var mask = o.mask()
+
+  // smoothing
+  mask = mask.focal_mode(35, 'circle', 'meters', 3)
+  
+  var r1 = 15
+  var r2 = 40
+    
+  var results = ee.Image(1).mask(mask).reduceToVectors({ 
+    geometry: ee.Geometry(region), 
+    scale: r1, 
+    tileScale: 16, 
+    maxPixels: 1e13
+  })
+      
+  results = results.map(function(g) { 
+    return g.simplify(r2) 
+  })
+
+  return results
+}
+
+exports.getWaterOccurrenceAsVector = getWaterOccurrenceAsVector
+
+function getWaterIndexHR() {
+  // water occurrence
+  var image = ee.ImageCollection.fromImages([
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_cell1'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_cell2'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_cell3'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_04913'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_04914'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_05057'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_05058'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_05059'),
+    ee.Image('users/gena/eo-reservoirs/Limpopo_occurrence_05129'),
+    ])
+    .map(function(i) { return i.resample('bicubic') })
+    
+  image = image.mosaic()  
+
+  return image
+}
+
+function addWaterIndexHR(waterIndex) {
+  var mask2 = waterIndex.select('mndwi').add(0.15).multiply(15)
+
+  var hand = ee.Image('users/gena/GlobalHAND/30m/hand-1000')
+  var handMask = hand.lt(10)
+  
+  Map.addLayer(ee.Image(1), {palette:['000000']}, 'black', true, 0.5)
+  Map.addLayer(ee.Image(1), {palette:['ffffff']}, 'white', true, 0.5)
+  Map.addLayer(waterIndex.mask(mask2), {min: -0.15, max:0.20, bands:['ndwi','ndwi','mndwi']}, 'ndwi, ndwi, mndwi', true)
+  Map.addLayer(waterIndex, {min: -0.15, max:0.20}, 'ndvi, ndwi, mndwi', false)
+  Map.addLayer(waterIndex.select('ndwi').mask(waterIndex.select('ndwi').add(0.15).multiply(15)), {min: -0.15, max:0.25, palette: style.Palettes.RedToBlue }, 'ndwi', false)
+  Map.addLayer(waterIndex.select('ndwi').mask(waterIndex.select('ndwi').add(0.15).multiply(15).multiply(handMask.or(waterIndex.select('ndwi').gt(0.15)))), {min: -0.15, max:0.25, palette: style.Palettes.RedToBlue }, 'ndwi (HAND < 15m)', false)
+  Map.addLayer(waterIndex.select('mndwi').mask(mask2), {min: -0.15, max:0.25, palette: style.Palettes.RedToBlue }, 'mndwi', false)
+  Map.addLayer(waterIndex.select('mndwi').mask(waterIndex.select('mndwi').add(0.15).multiply(15).multiply(handMask.or(waterIndex.select('ndwi').gt(0.15)))), {min: -0.15, max:0.25, palette: style.Palettes.RedToBlue }, 'mndwi (HAND < 15m)', false)
+  Map.addLayer(waterIndex.mask(), {min: 0, max:0.3}, 'mask', false)
+}
+
+function CatchmentTraverser() {
+  this.basins = ee.Image("users/gena/HydroBASINS")
+  
+  var level = 12
+  this.catchments = this.basins.select('PFAF_12').divide(ee.Number(10).pow(ee.Number(12).subtract(level))).floor();
+}
+
+CatchmentTraverser.prototype.fromPoint = function(pt) {
+  var values = this.basins.reduceRegion({ reducer: ee.Reducer.first(), geometry: pt, scale: 100})
+
+  var order = ee.Number(values.get('ORDER'))
+  var value = ee.Number(values.get('PFAF_12'))
+  var digits = ee.Number(12).subtract(order.add(2))
+
+  var selection = this.getSelection(digits, value)
+  selection = selection.updateMask(this.basins.select('MAIN_BAS').eq(ee.Image.constant(values.get('MAIN_BAS'))))
+  
+  var up = this.getUp(this.catchments.updateMask(selection), digits, value)
+
+  return { 
+    all: selection.selfMask(), 
+    up: this.catchments.mask(up).updateMask(selection)
+  }
+}
+
+CatchmentTraverser.prototype.getSelection = function(level, value) {
+  var power = ee.Number(10).pow(ee.Number(level))
+  var valueLeft = value.divide(power).floor()
+  
+  return this.catchments.divide(ee.Number(10).pow(ee.Number(level))).floor().eq(valueLeft)
+}
+
+CatchmentTraverser.prototype.getUp = function(catchments, level, value) {
+  var power = ee.Number(10).pow(ee.Number(level))
+  var valueRight = value.mod(power)
+  
+  return this.catchments.mod(power).gt(valueRight)
+}
+
+CatchmentTraverser.prototype.getDown = function(catchments, level, value) {
+  var power = ee.Number(10).pow(ee.Number(level))
+  var valueRight = value.mod(power)
+
+  return this.catchments.mod(power).lt(valueRight)
+}
+
+exports.getWaterIndexHR = getWaterIndexHR
+exports.addWaterIndexHR = addWaterIndexHR
+
+exports.getRivers = getRivers
+
+exports.CatchmentTraverser = CatchmentTraverser

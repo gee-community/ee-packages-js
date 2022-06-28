@@ -1,0 +1,64 @@
+var layers = [ui.Map.Layer(), ui.Map.Layer()]
+var currentIndex = 0
+var onPlayPause = function() {}
+var onHideLayers = function() {}
+var onTransparentLayers = function() {}
+var onSlide = function() {}
+var onOptions = function() {}
+
+var position = 'top-center'
+var width = '600px'
+var opacity = 1
+var compact = false
+
+
+var textPlay = '▶'
+var textPause = '⏸'
+var textOptions = '🎦'
+
+var buttonPlayPause = ui.Button(textPlay, onPlayPause)
+var buttonOptions = ui.Button(textOptions, onOptions)
+var buttonHideLayers = ui.Button('Hide', onHideLayers)
+
+var slider = ui.Slider({
+  min: 0,
+  max: layers.length - 1,
+  step: 1,
+  style: {stretch: 'horizontal'}
+});
+
+slider.onSlide(onSlide)
+
+var sliderOpacity = ui.Slider({
+  min:0, max: 1, step: 0.1
+})
+
+sliderOpacity.onSlide(function(o) {
+  layers[currentIndex].setOpacity(o)
+  opacity = o
+})
+
+sliderOpacity.setValue(opacity)
+
+var label = ui.Label('');
+
+var widgets = [slider, label, buttonPlayPause, buttonOptions]
+
+// buttonHideLayers, , sliderOpacity
+
+if(compact) {
+  widgets = [buttonPlayPause, slider, label]
+}
+
+// Create a panel that contains both the slider and the label.
+var panel = ui.Panel({
+  widgets: widgets,
+  layout: ui.Panel.Layout.flow('horizontal'),
+  style: {
+    position: position,
+    padding: '7px',
+    width: width
+  }
+});
+
+Map.add(panel)

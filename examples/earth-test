@@ -1,0 +1,13 @@
+var Earth = require('users/gena/packages:earth').Earth
+
+var earth = new Earth(-90, 0, { showCenter: true })
+
+Map.add(earth)
+
+var earth2 = new Earth(90, 0)
+
+earth2.style().set({ position: 'bottom-left' })
+
+Map.add(earth2)
+ 
+

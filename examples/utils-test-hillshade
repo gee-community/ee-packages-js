@@ -1,0 +1,52 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var ahn2 = ee.Image("AHN/AHN2_05M_RUW"),
+    alos = ee.Image("JAXA/ALOS/AW3D30_V1_1"),
+    ned = ee.Image("USGS/NED"),
+    alos2 = ee.Image("JAXA/ALOS/AW3D30/V2_2"),
+    ahn3 = ee.Image("users/gena/AHN3_DSM");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:palettes')
+
+var dem = alos.select('AVE_DSM')
+// var dem = ned
+// var dem = ahn3
+// var dem = ahn2
+
+dem = dem.rename('elevation').resample('bicubic')
+
+// Map.setCenter(5.92528, 50.9009, 17)
+
+var reducer = ee.Reducer.percentile([2, 98], ['min', 'max'])
+var bounds = Map.getBounds(true)
+var scale = Map.getScale() * 10
+var minMax = dem.reduceRegion(reducer, bounds, scale)
+
+var demStyled = dem.visualize({ 
+  min: minMax.get('elevation_min'), 
+  max: minMax.get('elevation_max'), 
+  palette: palettes.cb.BrBG[7] 
+})
+
+Map.addLayer(demStyled, {}, 'dem')
+
+var weight = 1.0
+var extrusion = 10
+var sunAzimuth = 315
+var sunElevation = 25
+var contrast = 0.1
+var brightness = 0
+var saturation = 1
+
+var demHillshaded = utils.hillshadeRGB(demStyled, dem, weight, extrusion, 
+                                       sunAzimuth, sunElevation, contrast, brightness, saturation, shadows)
+
+Map.addLayer(demHillshaded, {}, 'dem (hillshade)')
+
+var shadows = true
+
+var demHillshaded = utils.hillshadeRGB(demStyled, dem, weight, extrusion, 
+                                       sunAzimuth, sunElevation, contrast, brightness, saturation, shadows)
+
+Map.addLayer(demHillshaded, {}, 'dem (hillshade, shadows)')
+

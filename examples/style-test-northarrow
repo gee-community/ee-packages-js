@@ -1,0 +1,32 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #98ff00 */ee.Geometry.MultiPoint();
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var style = require('users/gena/packages:style')
+
+var pt = Map.getCenter()
+var scale = Map.getScale()
+var scaleFactor = 0.2
+var width = 2
+
+var northArrow = style.NorthArrow.draw(pt, scale, width, scaleFactor)
+Map.addLayer(northArrow, {}, 'north arrow', false)
+
+
+// a few more
+var arrows = ee.List.sequence(0.2, 1, 0.1).map(function(scaleFactor) {
+  return style.NorthArrow.draw(pt, scale, width, scaleFactor)
+    .set({ label: ee.Number(scaleFactor).format('%.1f') })
+})
+
+var animation = require('users/gena/packages:animation')
+animation.animate(arrows)
+
+
+

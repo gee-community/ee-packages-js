@@ -1,0 +1,124 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometrySampling = 
+    /* color: #0b4a8b */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[80.12346156964873, 13.19996721453835],
+          [80.12346156964873, 13.126086409475468],
+          [80.20860561261748, 13.126086409475468],
+          [80.20860561261748, 13.19996721453835]]], null, false),
+    geometryPlot = 
+    /* color: #96ff7c */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[80.21358379254912, 13.19996721453835],
+          [80.21358379254912, 13.126420761896163],
+          [80.44378169904326, 13.126420761896163],
+          [80.44378169904326, 13.19996721453835]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var assets = require('users/gena/packages:assets')
+var charting = require('users/gena/packages:charting')
+var animation = require('users/gena/packages:animation')
+
+Map.centerObject(ee.FeatureCollection([geometrySampling, geometryPlot]), 13)
+
+var start = ee.Date('2017-01-01')
+var stop = ee.Date('2020-01-01')
+
+var scale = Map.getScale()
+
+var images = assets.getImages(geometrySampling, {
+  missions: ['S2', 'L8'],
+  filter: ee.Filter.date(start, stop)
+})
+
+images = assets.excludeMasked(images, geometrySampling, 30)
+
+var imagesS2 = images.filter(ee.Filter.eq('MISSION', 'S2'))
+var imagesL8 = images.filter(ee.Filter.eq('MISSION', 'L8'))
+
+var plot = new charting.Plot(geometryPlot)
+
+plot.setName('Plot 1')
+
+// set plot x range usign times
+var timesS2 = ee.List(imagesS2.aggregate_array('system:time_start'))
+var timesL8 = ee.List(imagesL8.aggregate_array('system:time_start'))
+
+plot.setMinMax(start.millis(), stop.millis(), 0, 1)
+
+// add rug plots
+plot.addRugSeries('rug S2', timesS2, { width: 1.5, color: '000000' })
+plot.addRugSeries('rug L8', timesL8, { width: 1.5, color: 'ff0000' })
+
+// add colorbar CDF plot
+var vis = { min: 0.05, max: 0.5, gamma: 1.5, bands: ['swir', 'nir', 'green'] }
+
+// plot.addColorbarSeries('colorbar S2', imagesS2, geometrySampling, vis, 10)
+// plot.addColorbarSeries('colorbar L8', imagesL8, geometrySampling, vis, 30)
+
+var imagesClean = assets.getMostlyCleanImages(images, geometrySampling, {
+  cloudFrequencyThresholdDelta: -0.1
+})
+
+// imagesClean = imagesClean.map(function(i) {
+//   return i.updateMask(i.select('green').lt(0.2))
+// })
+
+imagesClean = imagesClean.sort('system:time_start')
+
+imagesClean = imagesClean.map(function(i) {
+  var cloud = i.select('green').gt(0.3)
+  
+  var cloudArea = ee.Image.pixelArea().mask(cloud).reduceRegion({
+    reducer: ee.Reducer.sum(), 
+    geometry: geometrySampling, 
+    scale: scale * 5
+  }).get('area')
+  
+  return i.updateMask(cloud.not())
+    .set({ cloudArea: cloudArea })
+})
+
+print(ui.Chart.feature.histogram(imagesClean, 'cloudArea', 50))
+
+imagesClean = imagesClean.filter(ee.Filter.lt('cloudArea', 5000000))
+
+var imagesCleanS2 = imagesClean.filter(ee.Filter.eq('MISSION', 'S2'))
+var imagesCleanL8 = imagesClean.filter(ee.Filter.eq('MISSION', 'L8'))
+var N = 1500
+plot.addColorbarSeries('colorbar S2 (clean)', imagesCleanS2, geometrySampling, vis, 10, N)
+plot.addColorbarSeries('colorbar L8 (clean)', imagesCleanL8, geometrySampling, vis, 30, N)
+
+plot.show()
+
+var styleSelection = { width: 2, color: '00ffff', fillColor: '00ffff33' }
+
+var frames = imagesClean.map(function(i) {
+  var t = ee.Number(i.get('system:time_start'))
+  var position = ee.Geometry(plot.getVLine(t).buffer(scale * 5).bounds())
+  
+  return ee.FeatureCollection(position).style(styleSelection)
+    .blend(i.visualize({ min: 0.05, max: 0.5, gamma: 1.4 }).clip(geometrySampling))
+    .set({
+      label: i.date().format('YYYY-MM-dd').cat(', ').cat(i.get('MISSION')),
+    })
+})
+
+// show S2
+animation.animate(frames, { 
+  //clipArea: geometrySampling,
+  //vis: { min: 0.05, max: 0.5, gamma: 1.4 },
+  maxFrames: 150,
+  label: 'label',
+  compact: true
+})
+

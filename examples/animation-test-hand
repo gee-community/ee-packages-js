@@ -1,0 +1,27 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var s2 = ee.ImageCollection("COPERNICUS/S2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+Map.addLayer(s2.select(['B12','B8','B2']).reduce(ee.Reducer.percentile([20])), {min:1000, max: 3500}, 'S2 20%', false)
+Map.addLayer(s2.select(['B12','B8','B2']).reduce(ee.Reducer.percentile([40])), {min:1000, max: 3500}, 'S2 40%', false)
+Map.addLayer(s2.select(['B12','B8','B2']).reduce(ee.Reducer.percentile([50])), {min:1000, max: 3500}, 'S2 60%', false)
+
+var hand30_1000 = ee.Image("users/gena/GlobalHAND/30m/hand-1000")
+
+var images = ee.List.sequence(0, 60, 1).map(function(th) {
+  return ee.Image(1).updateMask(hand30_1000.gt(ee.Image.constant(th)).multiply(0.7))
+    .set({ label: ee.Number(th).format('%d') })
+})
+
+images = ee.ImageCollection(images)
+
+var animation = require('users/gena/packages:animation')
+animation.animate(images, {label: 'label', maxFrames: 60})
+
+Map.setOptions('SATELLITE')

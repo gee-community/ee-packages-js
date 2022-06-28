@@ -1,0 +1,120 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+exports.doc = "Provides utils to work with Spherical Mercator tiles (Slippy Map)"
+
+var TILE_SIZE = 256
+
+var ORIGIN = 2 * Math.PI * 6378137 / 2.0
+
+/***
+ * meters/pixel at the Equator
+ */
+function zoomToScale(zoom) {
+  var C = 40075016.686 
+  var tileSize = 256
+  var tileWidth = C * Math.cos(0) / Math.pow(2, zoom)
+  var pixelWidth = tileWidth /  tileSize
+
+  return pixelWidth
+}
+
+function scaleToZoom(scale) {
+  var tileSize = 256
+  var tileWidth = scale * tileSize
+  var C = 40075016.686 
+  var zoom = Math.log(C/tileWidth) / Math.log(2)
+
+  return Math.ceil(zoom)
+}
+
+
+function pixelsToMeters(px, py, zoom) {
+  var resolution = zoomToScale(zoom)
+  
+  var x = px * resolution - ORIGIN
+  var y = py * resolution - ORIGIN
+  
+  return [x, y]
+}
+      
+function metersToPixels(x, y, zoom) {
+  var resolution = zoomToScale(zoom)
+  var px = (x + ORIGIN) / res
+  var py = (y + ORIGIN) / res
+  
+  return px, py
+}
+
+function degreesToTiles(lon, lat, zoom) {
+  var tx = Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
+  var ty = Math.floor((1 - Math.log(Math.tan(toRadians(lat)) 
+    + 1 / Math.cos(toRadians(lat))) / Math.PI) / 2 * Math.pow(2, zoom))
+  
+  return [tx, ty]
+}
+
+function tilesToDegrees(tx, ty, zoom) {
+  var lon = tx / Math.pow(2, zoom) * 360 - 180
+
+  var n = Math.PI - 2 * Math.PI * ty / Math.pow(2, zoom)
+  var lat = toDegrees(Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))))
+
+  return [lon, lat]
+}
+
+function getTilesForGeometry(geometry, zoom, opt_Bounds) {
+  var bounds = opt_Bounds || geometry
+  bounds = ee.List(bounds.bounds().coordinates().get(0))
+
+  var ll = bounds.get(0).getInfo() // TODO: port to server-side
+  var ur = bounds.get(2).getInfo()
+  
+  var tmin = degreesToTiles(ll[0], ll[1], zoom)
+  var tmax = degreesToTiles(ur[0], ur[1], zoom)
+  
+  var tiles = []
+  for(var tx = tmin[0]; tx < tmax[0] + 1; tx++) {
+    for(var ty = tmax[1]; ty < tmin[1] + 1; ty++) {
+      var bounds = getTileBounds(tx, ty, zoom)
+      
+      var rect = ee.Geometry.Rectangle(bounds, 'EPSG:3857', false)
+      
+      tiles.push(ee.Feature(rect).set({ tx: tx, ty: ty, zoom: zoom }))
+    }
+  }
+  
+  return ee.FeatureCollection(tiles).filterBounds(geometry)
+}
+
+function getTileBounds(tx, ty, zoom) {
+  ty = Math.pow(2, zoom) - ty - 1 // // TMS -> XYZ, flip y index
+  
+  var min = pixelsToMeters(tx * TILE_SIZE, ty * TILE_SIZE, zoom)
+  var max = pixelsToMeters((tx + 1) * TILE_SIZE, (ty + 1) * TILE_SIZE, zoom)
+  
+  return [min, max]
+}
+
+function toRadians(degrees) {
+  return degrees * Math.PI / 180;
+}
+ 
+function toDegrees(radians) {
+  return radians * 180 / Math.PI
+}
+
+
+
+exports.zoomToScale = zoomToScale
+exports.scaleToZoom = scaleToZoom
+exports.pixelsToMeters = pixelsToMeters
+exports.metersToPixels = metersToPixels
+exports.degreesToTiles = degreesToTiles
+exports.tilesToDegrees = tilesToDegrees
+exports.getTilesForGeometry = getTilesForGeometry
+exports.getTileBounds = getTileBounds

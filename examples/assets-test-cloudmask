@@ -1,0 +1,17 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Point([-118.92365767542618, 35.86338577732068]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var assets = require('users/gena/packages:assets')
+
+var images = assets.getImages(geometry, {
+  missions: ['S2', 'L8'],
+  cloudMask: true
+})
+
+var image = images.first()
+print(image.bandNames()) // "cloud" band is added
+
+Map.addLayer(image.updateMask(image.select('cloud')))
+
+Map.centerObject(image)
+

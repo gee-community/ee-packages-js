@@ -1,0 +1,89 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometryPlot = /* color: #000000 */ee.Geometry.LinearRing(
+        [[80.12912450628426, 13.20159462348145],
+         [80.12912450628426, 13.195410927470213],
+         [80.20225225286629, 13.195410927470213],
+         [80.20225225286629, 13.20159462348145],
+         [80.12912450628426, 13.20159462348145]]),
+    geometry = /* color: #000000 */ee.Geometry.LinearRing(
+        [[80.12689290838387, 13.203349427619615],
+         [80.12689290838387, 13.133147443736638],
+         [80.20431218938973, 13.133147443736638],
+         [80.20431218938973, 13.203349427619615],
+         [80.12689290838387, 13.203349427619615]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var animation = require('users/gena/packages:animation')
+var text = require('users/gena/packages:text')
+var charting = require('users/gena/packages:charting')
+
+var start = ee.Date('2017-01-01')
+var stop = ee.Date('2020-01-01')
+
+geometry = geometry.bounds()
+geometryPlot = geometryPlot.bounds()
+
+Map.centerObject(geometry, 13)
+
+var bounds = ee.Geometry(Map.getBounds(true))
+var scale = Map.getScale()
+
+var images = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filterDate(start, stop)
+  .filterBounds(geometry.centroid(1))
+  .map(function(i) { return i.select([0, 1]).rename(['b1','b2']) })
+  .sort('system:time_start')
+
+// generate rug plot (show acquisition times)
+var plot = new charting.Plot(geometryPlot)
+plot.setMinMax(start.millis(), stop.millis(), 0, 1)
+var times = ee.List(images.aggregate_array('system:time_start'))
+plot.addRugSeries('rug S1', times, { width: 1.5, color: '000000' }, 1)
+
+// get plot image
+var plotImage = plot.getImage()
+
+images = images.map(function(i) {
+  // brush
+  var position = ee.Geometry(plot.getVLine(i.get('system:time_start')).buffer(scale * 3).bounds())
+  var brush = ee.FeatureCollection(position)
+    .style({ width: 2, color: 'ffff00', fillColor: 'ffff0055' })
+
+  // image
+  var image = i
+    .visualize({bands: ['b2', 'b1', 'b1'], min: -22, max: -2})
+    .clip(geometry)
+
+  // time label
+  var pt =  text.getLocation(geometry, 'left', '15%', '3%')
+  var time = i.date().format('YYYY-MM-dd')
+  var label = text.draw(time, pt, scale, { 
+    fontSize: 24, textColor: '000000', fontType: 'Consolas',
+    outlineColor: 'ffffff', outlineWidth: 2.5, outlineOpacity: 0.8
+  })
+  
+  // blend
+  return image
+    .blend(plotImage)
+    .blend(brush)
+    .blend(label)
+    .set({ label: time })
+})
+
+Export.video.toDrive({
+  collection: images, 
+  description: 'India_reservoir', 
+  fileNamePrefix: 'India_reservoir', 
+  framesPerSecond: 5, 
+  region: geometry, 
+  scale: scale, 
+  crs: 'EPSG:3857'
+})
+
+animation.animate(images, {label: 'label', maxFrames: 100})

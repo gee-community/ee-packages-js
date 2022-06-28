@@ -1,0 +1,40 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d6cf80 */ee.Geometry.Polygon(
+        [[[-123.764453125, 46.22237311798524],
+          [-113.393359375, 63.56613888086946],
+          [-134.22343750000002, 59.37572044490845],
+          [-135.71757812500002, 53.24940538373933],
+          [-133.69609375000002, 47.6623893372254]]]),
+    geometry2 = /* color: #c0d9ff */ee.Geometry.Polygon(
+        [[[-82.93742004915627, 52.34900263629273],
+          [-83.46476379915627, 61.3758611088044],
+          [-93.48429504915626, 63.332588726606204],
+          [-102.36124817415626, 62.124619525972726],
+          [-100.77921692415626, 57.633849778352165],
+          [-93.30851379915626, 46.1039805510087]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var g = require('users/gena/packages:grid')
+
+// generateGridForGeometry(g, dx, dy, opt_marginx, opt_marginy, opt_proj)
+
+// WEB
+var proj = 'EPSG:3857'
+var dx = 400000
+var dy = 400000
+var marginx = 0, marginy = 0
+var grid1 = g.generateGridForGeometry(geometry, dx, dy, marginx, marginy, proj)
+Map.addLayer(grid1, { color: 'brown' }, 'grid1')
+
+// GEO
+proj = 'EPSG:4326'
+dx = 2
+dy = 2
+var grid2 = g.generateGridForGeometry(geometry2, dx, dy, marginx, marginy, proj)
+Map.addLayer(grid2, { color: 'black' }, 'grid2')

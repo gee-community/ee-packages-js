@@ -1,0 +1,70 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var dem = ee.Image("AHN/AHN2_05M_RUW"),
+    dem2 = ee.Image("users/gena/AHN3_DSM"),
+    alos = ee.ImageCollection("JAXA/ALOS/AW3D30/V3_2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// dem = dem2
+dem = alos.select('DSM').mosaic().reproject(ee.Projection('EPSG:3857').atScale(30)).resample('bicubic')
+var utils = require('users/gena/packages:utils')
+var palettes = require('users/gena/packages:palettes')
+
+Map.setOptions('HYBRID')
+// Map.setCenter(4.408241, 52.177595, 18)
+dem = dem//.resample('bicubic')
+  // .convolve(ee.Kernel.gaussian(0.5, 0.25, 'meters'))
+  .convolve(ee.Kernel.gaussian(35, 30, 'meters'))
+
+// var palette = palettes.crameri.lisbon[25]
+// palettes.showPalette('lisbon', palette)
+
+// var palette = palettes.cb.Greys[9].reverse()
+// palettes.showPalette('greys', palette)
+
+// var palette = palettes.crameri.oleron[50]
+// palettes.showPalette('oleron', palette)
+
+var palette = palettes.crameri.roma[25].slice(0).reverse()
+palettes.showPalette('roma', palette)
+
+var palette = ['white']
+
+var demRGB = dem.visualize({ min: -5, max: 5, palette: palette })
+
+var weight = 0.7 // wegith of Hillshade vs RGB intensity (0 - flat, 1 - HS)
+var exaggeration = 5 // vertical exaggeration
+var azimuth = 315 // Sun azimuth
+var zenith = 25 // Sun elevation
+var brightness = -0.05 // 0 - default
+var contrast = 0.1 // 0 - default
+var saturation = 1 // 1 - default
+var castShadows = false
+
+// no shadows
+var rgb = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+Map.addLayer(rgb, {}, 'DEM (no shadows)', false)
+
+// with shadows
+var castShadows = true
+var rgb = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+Map.addLayer(rgb, {}, 'DEM', false)
+
+// var demRGB = dem.visualize({ min: -5, max: 5, palette: [palettes.crameri.roma[50][15]] })
+var rgb2 = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth - 90, zenith + 30, contrast, brightness, saturation, castShadows)
+
+// var demRGB = dem.visualize({ min: -5, max: 5, palette: [palettes.crameri.roma[50][40]] })
+var rgb3 = utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth - 120, zenith + 25, contrast, brightness, saturation, castShadows)
+
+var rgb = rgb.multiply(0.6).add(rgb2.multiply(0.2)).add(rgb3.multiply(0.2))
+Map.addLayer(rgb, {}, 'DEM')
+
+Map.addLayer(dem, {}, 'DEM (raw)', false)
+
+/*
+var frames = ee.List.sequence(5, 90, 1).map(function(zenith) {
+  return utils.hillshadeRGB(demRGB, dem, weight, exaggeration, azimuth, zenith, contrast, brightness, saturation, castShadows)
+})
+
+
+var animation = require('users/gena/packages:animation')
+animation.animate(frames, { maxFrames: 90 })
+*/

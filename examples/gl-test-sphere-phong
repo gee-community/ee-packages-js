@@ -1,0 +1,249 @@
+/***
+ * A sphere with phong reflectance
+ * 
+ * Article: http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
+ * ShaderToy Code: https://www.shadertoy.com/view/lt33z7
+ * NVIDIA GPU Gems 2: https://developer.nvidia.com/gpugems/GPUGems2/gpugems2_chapter08.html
+ */
+ 
+var gl = require('users/gena/packages:gl').init()
+
+var MAX_MARCHING_STEPS = 32
+var MIN_DIST = 0.0
+var MAX_DIST = 100.0
+var EPSILON = 0.0001
+
+/**
+* Signed distance function for a sphere centered at the origin with radius 1.0;
+*/
+function sphereSDF(samplePoint) {
+  return gl.length(samplePoint).subtract(1.0)
+}
+
+/**
+* Signed distance function describing the scene.
+* 
+* Absolute value of the return value indicates the distance to the surface.
+* Sign indicates whether the point is inside or outside the surface,
+* negative indicating inside.
+*/
+function sceneSDF(samplePoint) {
+  samplePoint = samplePoint.arrayProject([0]).arrayFlatten([['x', 'y', 'z']])
+  
+  return sphereSDF(samplePoint);
+}
+
+/**
+* Return the shortest distance from the eyepoint to the scene surface along
+* the marching direction. If no part of the surface is found between start and end,
+* return end.
+* 
+* eye: the eye point, acting as the origin of the ray
+* marchingDirection: the normalized direction to march in
+* start: the starting distance away from the eye
+* end: the max distance away from the ey to march before giving up
+*/
+function shortestDistanceToSurface(eye, marchingDirection, start, end) {
+    var depth = start;
+
+    for (var i = 0; i < MAX_MARCHING_STEPS; i++) {
+      var p = eye.add(depth.multiply(marchingDirection))
+      
+      var dist = sceneSDF(p)
+      
+      depth = depth.add(dist)
+      
+      depth = depth.updateMask(depth.lt(end))
+      
+      //depth = depth.min(end)
+
+    //   if (dist < EPSILON) {
+		   // return depth;
+    //   }
+    //   depth += dist;
+    //   if (depth >= end) {
+    //       return end;
+    //   }
+    }
+    
+    // return end;
+    return depth
+}
+            
+/**
+* Return the normalized direction to march in from the eye point for a single pixel.
+* 
+* fieldOfView: vertical field of view in degrees
+* size: resolution of the output image
+* fragCoord: the x,y coordinate of the pixel in the output image
+*/
+function rayDirection(fieldOfView, size, fragCoord) {
+    var xy = fragCoord.subtract(ee.Image(size).divide(2.0))
+    var z = ee.Image(size.y).divide(gl.radians(fieldOfView).divide(2.0).tan())
+    return gl.normalize(xy.addBands(z.multiply(-1)))
+}
+
+/**
+* Using the gradient of the SDF, estimate the normal on the surface at point p.
+*/
+function estimateNormal(p) {
+  return gl.normalize(
+    ee.Image([
+        sphereSDF(p.add(ee.Image.constant([EPSILON, 0, 0]))).subtract(sphereSDF(p.add(ee.Image.constant([-EPSILON, 0, 0])))),
+        sphereSDF(p.add(ee.Image.constant([0, EPSILON, 0]))).subtract(sphereSDF(p.add(ee.Image.constant([0, -EPSILON, 0])))),
+        sphereSDF(p.add(ee.Image.constant([0, 0, EPSILON]))).subtract(sphereSDF(p.add(ee.Image.constant([0, 0, -EPSILON]))))
+    ])
+  )
+}
+
+/**
+* Lighting contribution of a single point light source via Phong illumination.
+* 
+* The vec3 returned is the RGB color of the light's contribution.
+*
+* k_a: Ambient color
+* k_d: Diffuse color
+* k_s: Specular color
+* alpha: Shininess coefficient
+* p: position of point being lit
+* eye: the position of the camera
+* lightPos: the position of the light
+* lightIntensity: color/intensity of the light
+*
+* See https://en.wikipedia.org/wiki/Phong_reflection_model#Description
+*/
+function phongContribForLight(k_d, k_s, alpha, p, eye, lightPos, lightIntensity) {  
+    p = p.arrayProject([0]).arrayFlatten([['x', 'y', 'z']])
+    lightPos = lightPos.arrayProject([0]).arrayFlatten([['x', 'y', 'z']])
+    eye = eye.arrayProject([0]).arrayFlatten([['x', 'y', 'z']])
+
+    var N = estimateNormal(p)
+    var L = gl.normalize(lightPos.subtract(p))
+    var V = gl.normalize(eye.subtract(p))
+    var R = gl.normalize(gl.reflect(L.multiply(-1), N))
+    
+    var dotLN = gl.dot(L, N);
+    var dotRV = gl.dot(R, V);
+
+    // Light not visible from this point on the surface
+    function lightNone() {
+      return gl.vec3(0.0, 0.0, 0.0)
+    }
+    
+    // Light reflection in opposite direction as viewer, apply only diffuse component
+    function lightDiffuse() {
+      return lightIntensity.multiply(k_d).multiply(dotLN)
+    }
+    
+    // Phong
+    function lightPhong() {
+      return lightIntensity.multiply(k_d.multiply(dotLN).add(k_s.multiply(dotRV.pow(alpha))))
+    }
+    
+    var result = lightDiffuse()
+    result = result.where(dotRV.gt(0), lightPhong())
+    
+    return result
+}
+
+/**
+* Lighting via Phong illumination.
+* 
+* The vec3 returned is the RGB color of that point after lighting is applied.
+* k_a: Ambient color
+* k_d: Diffuse color
+* k_s: Specular color
+* alpha: Shininess coefficient
+* p: position of point being lit
+* eye: the position of the camera
+*
+* See https://en.wikipedia.org/wiki/Phong_reflection_model#Description
+*/
+function phongIllumination(k_a, k_d, k_s, alpha, p, eye, time) {
+    var ambientLight = gl.vec3(1.0, 1.0, 1.0).multiply(0.5)
+    var color = ambientLight.multiply(k_a)
+    
+    var light1Pos = gl.vec3(time.sin().multiply(4.0), 2.0, time.cos().multiply(4.0))
+    var light1Intensity = gl.vec3(0.4, 0.4, 0.4)
+    color = color.add(phongContribForLight(k_d, k_s, alpha, p, eye, light1Pos, light1Intensity))
+
+    var light2Pos = gl.vec3(time.multiply(0.5).sin().multiply(2.0), time.multiply(0.5).cos().multiply(2.0), 2.0)
+    var light2Intensity = gl.vec3(0.4, 0.4, 0.4);
+    color = color.add(phongContribForLight(k_d, k_s, alpha, p, eye, light2Pos, light2Intensity))
+    
+    return gl.toImage3(color)
+}
+
+/**
+* Return the normalized direction to march in from the eye point for a single pixel.
+* 
+* fieldOfView: vertical field of view in degrees
+* size: resolution of the output image
+* fragCoord: the x,y coordinate of the pixel in the output image
+*/
+function rayDirection(fieldOfView, size, fragCoord) {
+  // BROKEN!
+  
+    var xy = fragCoord.subtract(ee.Image(size).divide(2))
+    var z = ee.Image(size[1]).divide(gl.radians(fieldOfView).divide(2).tan())
+
+    return gl.normalize(ee.Image([xy, z.multiply(-1)]))
+}
+
+/***
+ * Main render function
+ */
+function render(time) {
+  time = ee.Number(time)
+  
+  // var dir = rayDirection(45.0, gl.iResolution.xy, uv).toArray()
+  // var eye = gl.vec3(0.0, 0.0, 5.0)
+
+  var uv = gl.fragCoord.divide(gl.iResolution.xy)
+  uv = uv.multiply(2).subtract(1) // make coordinates go from -1 to 1
+  uv = uv.multiply(ee.Image([gl.iResolution.x.divide(gl.iResolution.y), 1.0]))
+  var r = gl.normalize(uv.addBands(ee.Image.constant(1).rename('z'))).multiply(-1)
+  var o = ee.Image([0, 0, 3])
+  var dir = r.toArray()
+  var eye = o.toArray()
+  
+  var dist = shortestDistanceToSurface(eye, dir, ee.Image(MIN_DIST), ee.Image(MAX_DIST))
+
+  function renderEmpty() {
+    return gl.vec3(0.0, 0.0, 0.0)
+  }
+  
+  function renderScene() {
+    // The closest point on the surface to the eyepoint along the view ray
+    var p = eye.add(dir.multiply(dist))
+    
+    var K_a = gl.vec3(0.2, 0.2, 0.2)
+    var K_d = gl.vec3(0.7, 0.2, 0.2)
+    var K_s = gl.vec3(1.0, 1.0, 1.0)
+    var shininess = ee.Image(10.0)
+    
+    var color = phongIllumination(K_a, K_d, K_s, shininess, p, eye, time);
+    
+    return color
+  }
+  
+  // var fragColor = ee.Algorithms.If(dist.gt(MAX_DIST - EPSILON), renderEmpty(), renderScene())
+  var fragColor = renderScene()
+
+  return ee.Image(fragColor)
+}
+
+// ==================================
+//Map.setCenter(0, 0, 15)
+//Map.setLocked(true)
+
+var vis = { min: 0, max: 1 }
+
+// var image = render(0)
+// Map.addLayer(image, vis, 'image')
+
+var animation = require('users/gena/packages:animation')
+var tMax = Math.PI * 4
+var tStep = 0.25
+var images = ee.List.sequence(0, tMax, tStep).map(function(t) { return render(t) })
+animation.animate(images, { vis: vis, timeStep: 50, maxFrames: Math.floor(tMax / tStep) })

@@ -1,0 +1,20 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var images = ee.ImageCollection("COPERNICUS/S2"),
+    geometry = /* color: #de5a5a */ee.Geometry.LineString(
+        [[55.18100532189851, 25.118768217524654],
+         [55.16315224611867, 25.086590753213407]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var gl = require('users/gena/packages:gl')
+
+Map.centerObject(geometry)
+
+var mask = gl.getGradientMask(geometry)
+
+var image = images
+  .filterBounds(geometry.centroid())
+  .filterDate('2018-05-01', '2018-06-01')
+  .first()
+  .visualize({ bands: ['B11', 'B8', 'B2'], min: 500, max: 5000, gamma: 0.8 })
+  
+Map.addLayer(image.updateMask(mask))
+

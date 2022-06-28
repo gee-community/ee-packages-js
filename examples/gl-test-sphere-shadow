@@ -1,0 +1,134 @@
+// Shadertoy ray marching tutorial: https://www.youtube.com/watch?v=yxNnRSefK94
+
+var gl = require('users/gena/packages:gl').init()
+
+var z = -4
+var zlight = -3
+
+/***
+ * Signed distance function to show a sphere
+ */
+function sdfSphere(p) {
+  return gl.length(p).subtract(1.0)
+}
+
+var EPSILON = 0.0001
+
+function sdfSphereNormal(p) {
+  return gl.normalize(
+    ee.Image([
+        sdfSphere(p.add(ee.Image.constant([EPSILON, 0, 0]))).subtract(sdfSphere(p.add(ee.Image.constant([-EPSILON, 0, 0])))),
+        sdfSphere(p.add(ee.Image.constant([0, EPSILON, 0]))).subtract(sdfSphere(p.add(ee.Image.constant([0, -EPSILON, 0])))),
+        sdfSphere(p.add(ee.Image.constant([0, 0, EPSILON]))).subtract(sdfSphere(p.add(ee.Image.constant([0, 0, -EPSILON]))))
+    ])
+  )
+}
+
+/***
+ * Raymarching 
+ * 
+ * o - origin
+ * r - ray direction
+ */
+function trace(o, r) {
+  var t = ee.Image.constant(0.0)
+  var n = ee.Image.constant(0.0)
+
+  for(var i=0; i<16; i++) {
+    var p = o.add(r.multiply(t))
+
+    var sphere = sdfSphere(p)
+
+    var Lp = ee.Image([1, 1.5, zlight])
+    var L = gl.normalize(Lp.subtract(o))
+    var N = sdfSphereNormal(p)  
+    var dotLN = L.toArray().arrayDotProduct(N.toArray())
+    
+    var n = dotLN.multiply(ee.Image([1, 1, 0.3]))
+    // var n = n.add(dotLN.multiply(ee.Image([1, 0.7, 0.1]))
+    //   //.multiply(sphere.abs().lt(0.5))
+    //   .multiply(0.5)
+    // )
+      
+      
+    // var n = n.add(sdfSphereNormal(p).multiply(sphere.lt(0.5)))
+    
+    t = t.add(sphere)
+  }
+  
+/*
+  var i = ee.List.sequence(0, 32, 1)
+
+  t = i.iterate(function(i, prev) {
+    prev = ee.Image(prev)
+    var p = o.add(r.multiply(prev))
+
+    var sphere = sdfSphere(p)
+
+    prev = prev.add(sphere.multiply(0.5))
+    return prev
+  }, t)
+*/  
+
+  t = ee.Image(t)
+  
+/*
+  var s = ee.Image.constant(0.0)
+  var Lp = ee.Image([1, 1, 0])
+  var L = gl.normalize(Lp.subtract(o))
+  
+  s = i.iterate(function(i, prev) {
+    prev = ee.Image(prev)
+    var p = o.add(r.multiply(prev))
+
+    var N = sdfSphereNormal(p)  
+    var dotLN = L.toArray().arrayDotProduct(N.toArray())
+    
+    //var diff = dotLN.multiply(0.1)
+    var diff = N
+    
+    prev = prev.add(diff)
+    
+    return prev
+  }, s)
+*/
+  var fog = ee.Image.constant(1).divide(ee.Image.constant(1.0).add(t.multiply(t).multiply(0.1)))
+
+  fog = fog.add(n)
+
+  return fog// .add(s)
+}
+
+/***
+ * Main rendering function
+ */
+function render(time) {
+  var uv = gl.fragCoord.divide(gl.iResolution.xy)
+
+  // make coordinates go from -1 to 1
+  uv = uv.multiply(2).subtract(1)
+
+  uv = uv.multiply(ee.Image([gl.iResolution.x.divide(gl.iResolution.y), 1.0]))
+
+  var r = gl.normalize(uv.addBands(ee.Image.constant(1).rename('z')))
+  var o = ee.Image([0, 0, z])
+  var t = trace(o, r)
+  
+  var color = t
+
+  return color
+}
+
+// ==================================
+// Map.setCenter(0, 0, 5)
+//Map.setLocked(true)
+
+var vis = { min: 0, max: 1 }
+
+var image = render(0)
+Map.addLayer(image.mask(ee.Image(1.2).subtract(image)), vis, 'image')
+
+// var animation = require('users/gena/packages:animation')
+// var images = ee.List.sequence(0, 1.91, 0.1).map(function(t) { return render(t) })
+// animation.animate(images, { vis: vis, timeStep: 50, maxFrames: 100 })
+

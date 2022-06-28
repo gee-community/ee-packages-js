@@ -1,0 +1,1132 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var text = require('users/gena/packages:text')
+
+function translate(coord, x, y) {
+  var x1 = ee.Number(coord.get(0)).subtract(x)
+  var y1 = ee.Number(coord.get(1)).subtract(y)
+  
+  return ee.List([x1, y1])
+}
+
+/***
+ * Draws a north arrow
+ */
+var NorthArrow = {
+  draw: function(pt, scale, width, s, proj) {
+    var projWeb = ee.Projection('EPSG:3857')
+    var geodesic = false
+    
+    var offset = ee.Number(width).divide(2)
+    var offset2 = offset.multiply(-1)
+    
+    var left = ee.Algorithms.GeometryConstructors.Polygon([
+      [ [offset2, ee.Number(100).multiply(s)], [offset2, ee.Number(205).multiply(s)], [ee.Number(-95).multiply(s), 0] ]
+    ], projWeb, geodesic)
+    
+    var right = ee.Algorithms.GeometryConstructors.Polygon([
+      [ [offset, ee.Number(100).multiply(s)], [ee.Number(95).multiply(s), 0], [offset, ee.Number(205).multiply(s)] ]
+    ], projWeb, geodesic)
+    
+    var n = ee.Algorithms.GeometryConstructors.LineString([
+      [ee.Number(-25).multiply(s), ee.Number(-75).multiply(s)], 
+      [ee.Number(-25).multiply(s), 0], 
+      [ee.Number(25).multiply(s), ee.Number(-75).multiply(s)], 
+      [ee.Number(25).multiply(s), 0]
+    ], projWeb, geodesic)
+    
+    var image = ee.FeatureCollection([left, n]).style({ color: 'black', width: width, fillColor: '00000000'})
+      .blend(ee.FeatureCollection([right]).style({ color: 'black', width: width, fillColor: 'black'}))
+    
+    var coords = pt.transform(projWeb).coordinates()
+    image = image.changeProj(projWeb, projWeb.translate(coords.get(0), coords.get(1)).atScale(scale))
+
+    return image
+  }
+}
+
+/***
+ * Draws gradient bar
+ */
+var GradientBar = {
+  draw: function (pos, props) {
+    var scale = Map.getScale()
+    var palette = ['000000', 'ffffff']
+    var format = '%.0f'
+    var round = true
+    var labels = []
+    var min = 0
+    var max = 1
+    var textProperties = { fontSize:18, textColor: '000000', 
+      outlineColor: 'ffffff', outlineWidth: 3, outlineOpacity: 0.6 }
+      
+    if(props) {
+      labels = props.labels || labels
+      scale = props.scale || scale
+      palette = props.palette || palette
+      format = props.format || format
+      round = props.round !== 'undefined' ? props.round : round
+      min = props.min || min
+      max = props.max || max
+      textProperties = props.text || textProperties
+    }
+
+    // convert to line string
+    var coords = ee.List(pos.bounds().coordinates().get(0))
+    var pos = ee.Geometry.LineString([coords.get(0), coords.get(2)], null, true)
+
+    // get start / stop
+    var p = ee.Number(Map.getScale()).divide(ee.Image().projection().nominalScale())
+    var pt0 = ee.List(pos.coordinates().get(0))
+    var pt1 = ee.List(pos.coordinates().get(1))
+
+    // scalebar
+    var bounds = pos.buffer(scale * 2).bounds()
+    var ll = ee.List(ee.List(bounds.coordinates().get(0)).get(0))
+    var ur = ee.List(ee.List(bounds.coordinates().get(0)).get(2))
+    var width = ee.Number(ur.get(0)).subtract(ll.get(0))
+    var height = ee.Number(ur.get(1)).subtract(ll.get(1))
+
+    var origin = ee.Image.constant(ll.get(0)).addBands(ee.Image.constant(ll.get(1)))
+
+    var bar = ee.Image.pixelLonLat()
+      .subtract(origin).select(0).divide(width).clip(bounds)
+
+    // define base images
+    var images = ee.List([
+      bar.visualize({min:0, max:1, forceRgbOutput: true, palette: palette}),
+      ee.Image().paint(bounds, 1, 1).visualize({palette:['000000']}),
+    ])
+    
+    // add labels
+    var imagesLabel = labels.map(function(label) {
+      var labelText = ee.Number(label).format(format)
+      
+      var labelOffset = ee.Number(label).subtract(min).divide(ee.Number(max).subtract(min))
+        .multiply(width)
+      
+      var point = translate(
+        pt0, 
+        labelOffset.multiply(-1).add(p.multiply(8)), 
+        p.multiply(2)
+      )
+      
+      var imageLabel = text.draw(labelText, ee.Geometry.Point(point), scale, textProperties)
+      
+      return imageLabel
+    })
+    
+    images = ee.List(images).cat(imagesLabel)
+
+    return ee.ImageCollection.fromImages(images).mosaic()
+  },
+}
+
+
+/***
+ * Draws a scale bar
+ */
+var ScaleBar = {
+  draw: function (pos, props) {
+    var scale = Map.getScale()
+    var units = 'km'
+    var steps = 5
+    var multiplier = 1000
+    var precision = 1000
+    var palette = ['000000', 'ffffff']
+    var format = '%.0f'
+    var round = true
+    var textProperties = { fontSize:18, textColor: '000000', outlineColor: 'ffffff', outlineWidth: 2.5, outlineOpacity: 0.6 }
+
+    if(props) {
+      scale = props.scale || scale
+      units = props.units || units
+      steps = props.steps || steps
+      multiplier = props.multiplier || multiplier
+      palette = props.palette || palette
+      format = props.format || format
+      round = props.round !== 'undefined' ? props.round : round
+      textProperties = props.text || textProperties
+      precision = props.precision || precision
+    }
+
+    var p = ee.Number(Map.getScale()).divide(ee.Image().projection().nominalScale())
+    
+    var coords = ee.List(pos.bounds().coordinates().get(0))
+    var pt0 = ee.List(coords.get(3))
+    var pt1 = ee.List(coords.get(1))
+ 
+    // scalebar
+    var bounds = pos.buffer(scale * 2).bounds()
+    var ll = ee.List(ee.List(bounds.coordinates().get(0)).get(0))
+    var ur = ee.List(ee.List(bounds.coordinates().get(0)).get(2))
+    var width = ee.Number(ur.get(0)).subtract(ll.get(0))
+    var height = ee.Number(ur.get(1)).subtract(ll.get(1))
+
+    var origin = ee.Image.constant(ll.get(0)).addBands(ee.Image.constant(ll.get(1)))
+
+    var scalebar = ee.Image.pixelLonLat()
+      .subtract(origin)
+      .divide([width, height]).multiply([steps, 1])
+      .toInt().reduce(ee.Reducer.sum()).bitwiseAnd(1)
+      .clip(bounds)
+
+    // units
+    var point = translate(pt1, p.multiply(-8), p.multiply(-7))
+    var imageUnits = text.draw(units, ee.Geometry.Point(point), scale, textProperties)
+
+    // define base images
+    var images = ee.List([
+      scalebar.visualize({min:0, max:1, forceRgbOutput: true, palette: palette}),
+      ee.Image().paint(bounds, 1, 1).visualize({palette:['000000']}),
+      imageUnits,
+    ])
+    
+    // add labels
+    var boundsMeters = bounds.transform(ee.Projection('EPSG:3857'), ee.ErrorMargin(1))
+    var ll = ee.List(ee.List(boundsMeters.coordinates().get(0)).get(0))
+    var ur = ee.List(ee.List(boundsMeters.coordinates().get(0)).get(2))
+    var widthTargetUnits = ee.Number(ur.get(0)).subtract(ee.Number(ll.get(0))).divide(precision).floor().multiply(precision)
+    
+    for(var i=0; i<steps+1; i++) {
+      var markerText = widthTargetUnits.divide(steps * multiplier).multiply(i).format(format)
+      
+      var point = translate(
+        pt0, 
+        width.divide(steps).multiply(i).multiply(-1).add(p.multiply(10)), 
+        p.multiply(-20)
+      )
+      
+      var imageLabel = text.draw(markerText, ee.Geometry.Point(point), scale, textProperties)
+      
+      images = images.add(imageLabel)
+    }
+
+    return ee.ImageCollection.fromImages(images).mosaic()
+  },
+}
+
+
+/***
+ * Draws frame for publishing purposes
+ */
+
+var Frame = function(bounds, props) {
+  this.bounds = bounds 
+  this.scale = Map.getScale()
+  this.steps = 10
+  this.palette = ['000000', 'ffffff']
+  this.format = '%.1f'
+  this.round = true
+  this.size = 5
+
+  this.parseProperties(props)
+  
+  // degree to meter multiplier
+  this.scaleFactor = ee.Number(this.scale).divide(ee.Image().projection().nominalScale())
+  this.marginSize = ee.Number(this.size).multiply(this.scaleFactor)
+}
+
+Frame.draw = function(bounds, options) {
+  var frame = new Frame(bounds, options)
+  return frame.draw()
+}
+
+Frame.prototype.parseProperties = function(props) {
+    if(props) {
+      this.scale = props.scale || this.scale
+      this.steps = props.steps || this.steps
+      this.palette = props.palette || this.palette
+      this.format = props.format || this.format
+      this.round = props.round !== 'undefined' ? props.round : this.round
+      this.size = props.size || 5
+      this.textProperties = props.text || {fontSize:14, textColor: '000000'}
+      this.left = typeof(props.left) !== 'undefined' ? props.left : true;
+      this.right = typeof(props.right) !== 'undefined' ? props.right : true;
+      this.top = typeof(props.top) !== 'undefined' ? props.top : true;
+      this.bottom = props.bottom === 'undefined' ? props.bottom : true;
+    }
+}
+
+Frame.prototype.getMargin = function(orientation, pt0, pt1, labelMarginX, labelMarginY) {
+    var urOffsetX = 0
+    var urOffsetY = 0
+    var stepsX = 1
+    var stepsY = 1
+    var coord = 0
+
+    switch(orientation) {
+      case 'horizontal': 
+        stepsX = this.steps
+        stepsY = 1
+        urOffsetX = 0
+        urOffsetY = this.marginSize.multiply(-1)
+        coord = 0
+        break;
+      case 'vertical': 
+        stepsX = 1
+        stepsY = this.steps
+        urOffsetX = this.marginSize.multiply(-1)
+        urOffsetY = 0
+        coord = 1
+        break;
+    }
+    
+    var ll = pt0
+    var ur = translate(pt1, urOffsetX, urOffsetY)
+
+    var bounds = ee.Geometry.Rectangle([ll, ur], null, false)
+    
+    var width = ee.Number(ur.get(0)).subtract(ll.get(0))
+    var height = ee.Number(ur.get(1)).subtract(ll.get(1))
+    var origin = ee.Image.constant(pt0.get(0)).addBands(ee.Image.constant(pt0.get(1)))
+
+    var margin = ee.Image.pixelLonLat()
+      .subtract(origin)
+      .divide([width, height]).multiply([stepsX, stepsY])
+      .toInt().reduce(ee.Reducer.sum()).bitwiseAnd(1)
+      .clip(bounds)
+
+    // define base images
+    var images = ee.List([
+      margin.visualize({min:0, max:1, forceRgbOutput: true, palette: this.palette}),
+      ee.Image().paint(bounds, 1, 1).visualize({palette:['000000']}),
+    ])
+
+    // add labels
+    var start = ee.Number(pt0.get(coord))
+    
+    var offset = [
+      width.divide(this.steps).multiply(1 - coord),
+      height.divide(this.steps).multiply(coord),
+    ]
+    
+    var stepSize = offset[0].add(offset[1])
+
+    for(var i=0; i<this.steps+1; i++) {
+      var markerText = start.add(stepSize.multiply(i)).format(this.format)
+
+      var point = translate(
+        pt0, 
+        ee.Number(offset[0]).multiply(i).multiply(-1).add(ee.Number(labelMarginX).multiply(this.scaleFactor)),
+        ee.Number(offset[1]).multiply(i).multiply(-1).add(ee.Number(labelMarginY).multiply(this.scaleFactor))
+      )
+
+      var imageLabel = text.draw(markerText, ee.Geometry.Point(point), this.scale, this.textProperties)
+      images = images.add(imageLabel)
+    }
+    
+    return images
+}
+
+Frame.prototype.draw = function() {
+  var coords = ee.List(this.bounds.coordinates().get(0))
+  var ll = ee.List(coords.get(0))
+  var lr = ee.List(coords.get(1))
+  var ur = ee.List(coords.get(2))
+  var ul = ee.List(coords.get(3))
+
+  var marginLeft = this.textProperties.marginLeft || 0
+  var marginRight = this.textProperties.marginRight || 0
+  var marginTop = this.textProperties.marginTop || 0
+  var marginBottom = this.textProperties.marginBottom || 0
+
+    // margin
+    var margins = ee.List([])
+    
+    if(this.bottom) {
+      margins = margins.add(this.getMargin('horizontal', translate(ll, 0, this.marginSize), translate(lr, 0, this.marginSize), 0, marginBottom)) // bottom
+    }    
+
+    if(this.top) {
+      margins = margins.add(this.getMargin('horizontal', ul, ur, 0, ee.Number(-18).subtract(marginTop))) // top
+    }
+
+    if(this.left) {
+      margins = margins.add(this.getMargin('vertical', translate(ll, this.marginSize, 0), translate(ul, this.marginSize, 0), ee.Number(25).add(marginLeft), -5)) // left
+    }
+
+    if(this.right) {
+      margins = margins.add(this.getMargin('vertical', lr, ur, ee.Number(-10).subtract(marginRight), -5)) // right
+    }
+
+    margins = margins.flatten()
+    
+    return ee.ImageCollection.fromImages(margins).mosaic()
+  
+}
+
+
+/***
+ * from https://snazzymaps.com
+ */
+var MAP_STYLES = function(hideLabels, opt_style) {
+  var mapStyles = {
+
+  Dark: [
+    {
+        "featureType": "all",
+        "elementType": "labels.text.fill",
+        "stylers": [
+            {
+                "saturation": 36
+            },
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 40
+            }
+        ]
+    },
+    {
+        "featureType": "all",
+        "elementType": "labels.text.stroke",
+        "stylers": [
+            {
+                "visibility": hideLabels ? "off" : "on"
+            },
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 16
+            }
+        ]
+    },
+    {
+        "featureType": "all",
+        "elementType": "labels.icon",
+        "stylers": [
+            {
+                "visibility": hideLabels ? "off" : "on"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 20
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 17
+            },
+            {
+                "weight": 1.2
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "labels.text.fill",
+        "stylers": [
+            {
+                "visibility": hideLabels ? "off" : "on"
+            },
+            {
+                "lightness": "32"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.country",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            {
+                "visibility": "on"
+            },
+            {
+                "weight": "2.28"
+            },
+            {
+                "saturation": "-33"
+            },
+            {
+                "lightness": "24"
+            }
+        ]
+    },
+    {
+        "featureType": "landscape",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 20
+            }
+        ]
+    },
+    {
+        "featureType": "landscape",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "lightness": "0"
+            }
+        ]
+    },
+    {
+        "featureType": "landscape",
+        "elementType": "labels.text.fill",
+        "stylers": [
+            {
+                "lightness": "69"
+            }
+        ]
+    },
+    {
+        "featureType": "poi",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 21
+            }
+        ]
+    },
+    {
+        "featureType": "road",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "lightness": "63"
+            }
+        ]
+    },
+    {
+        "featureType": "road.highway",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "color": "#2d2d2d"
+            },
+            {
+                "lightness": 17
+            }
+        ]
+    },
+    {
+        "featureType": "road.highway",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 29
+            },
+            {
+                "weight": 0.2
+            }
+        ]
+    },
+    {
+        "featureType": "road.arterial",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 18
+            }
+        ]
+    },
+    {
+        "featureType": "road.local",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 16
+            }
+        ]
+    },
+    {
+        "featureType": "transit",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 19
+            }
+        ]
+    },
+    {
+        "featureType": "water",
+        "elementType": "geometry",
+        "stylers": [
+            {
+                "color": "#0f252e"
+            },
+            {
+                "lightness": 17
+            }
+        ]
+    },
+    {
+        "featureType": "water",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "lightness": "-100"
+            },
+            {
+                "gamma": "0.00"
+            }
+        ]
+    }
+],
+
+Black: [
+    {
+        "featureType": "land",
+        "stylers": [
+            {
+                "visibility": "on"
+            },
+            {
+                "lightness": -100
+            }
+        ]
+    },
+    {
+        "featureType": "water",
+        "stylers": [
+            {
+                "visibility": "on"
+            },
+            {
+                "lightness": -100
+            }
+        ]
+    }
+],
+
+Dracula: [
+    {
+        "featureType": "all",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "all",
+        "elementType": "labels.text.fill",
+        "stylers": [
+            {
+                "color": "#ffffff"
+            }
+        ]
+    },
+    {
+        "featureType": "all",
+        "elementType": "labels.text.stroke",
+        "stylers": [
+            {
+                "color": "#000000"
+            },
+            {
+                "lightness": 13
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "on"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "geometry.fill",
+        "stylers": [
+            {
+                "color": "#000000"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            {
+                "color": "#144b53"
+            },
+            {
+                "lightness": 14
+            },
+            {
+                "weight": 1.4
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.country",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "on"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.country",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            {
+                "weight": "0.75"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.country",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "simplified"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.province",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.province",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.locality",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "administrative.locality",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "landscape",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "on"
+            },
+            {
+                "color": "#192133"
+            }
+        ]
+    },
+    {
+        "featureType": "landscape.natural",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "poi",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "road",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "transit",
+        "elementType": "all",
+        "stylers": [
+            {
+                "visibility": "off"
+            }
+        ]
+    },
+    {
+        "featureType": "water",
+        "elementType": "all",
+        "stylers": [
+            {
+                "color": "#021019"
+            },
+            {
+                "visibility": "on"
+            }
+        ]
+    },
+    {
+        "featureType": "water",
+        "elementType": "labels",
+        "stylers": [
+            {
+                "visibility": "simplified"
+            },
+            {
+                "color": "#a1f5ff"
+            },
+            {
+                "weight": "0.5"
+            }
+        ]
+    }
+]
+}
+
+  if(opt_style) {
+    var dict = []
+    
+    dict.push({
+      key: opt_style,
+      values: mapStyles[opt_style]
+    })
+    
+    return dict
+  } else {
+    return { Dark: mapStyles.Dark }
+  }
+}
+
+//Map.setOptions('Dark', MAP_STYLES)
+
+exports.SetMapStyleDark = function(map, hideLabels) {
+  if(typeof(map) === 'undefined') { 
+    map = Map
+  }
+  map.setOptions('Dark', MAP_STYLES(hideLabels))
+}
+
+exports.setMapStyleDark = exports.SetMapStyleDark
+
+exports.SetMapStyleGrey = function(map) {
+  if(typeof(map) === 'undefined') { 
+    map = Map
+  }
+
+  map.setOptions( 'Grey', {'Grey':[ 
+    { 
+      featureType:'all', 
+      stylers:[{
+        saturation:-100
+      }] },]  }  );
+}
+
+exports.setMapStyleGrey = exports.SetMapStyleGrey
+
+exports.SetMapStyleDracula = function(map, hideLabels) {
+  if(typeof(map) === 'undefined') { 
+    map = Map
+  }
+
+  map.setOptions('Dracula', MAP_STYLES(hideLabels))
+}
+
+exports.setMapStyleDracula = exports.SetMapStyleDracula
+
+// backward-compatibility, palettes are moved to users/gena/packages:palettes
+exports.Palettes = {
+  Water: ['f7fbff', 'deebf7', 'c6dbef', '9ecae1', '6baed6', '4292c6', '2171b5', '08519c', '08306b'],
+  RedToBlue: ['67001f','b2182b','d6604d','f4a582','fddbc7','d1e5f0','92c5de','4393c3','2166ac','053061'],
+  BlackToBlue: ['1a1a1a', '4d4d4d', '878787', 'bababa', 'e0e0e0','d1e5f0','92c5de','4393c3','2166ac','053061'],
+  Hot: ['000000',  'f03b20', 'ffff55', 'ffffb2', 'ffffee'],
+  WhiteToRed: ['ffffff', 'ff0000'],
+  BlackToRedToWhite: ['000000', 'ff0000','ffffff'],
+  BlueToRedToWhite: ['2171b5', 'e31a1c','ffffb2','ffffff'],
+  BlueToWhiteToRed: ['2171b5', 'ffffff','e31a1c'],
+};
+
+exports.addBackground = function(name, color) {
+  Map.addLayer(ee.Image(1), {palette: [color]}, name, false, 0.5)
+}
+
+
+exports.NorthArrow = NorthArrow
+exports.GradientBar = GradientBar
+exports.ScaleBar = ScaleBar
+exports.Scalebar = ScaleBar
+exports.Frame = Frame
+
+
+
+exports.Feature = {
+    histogram: function(features, propertyName, props) {
+      var palette = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
+      var opacity = 1
+      var width = 1
+      var pointSize = 2
+
+      if(props) {
+        palette = props.palette ? props.palette : palette
+        opacity = props.opacity ? props.opacity : opacity
+        width = props.width ? props.width : width
+        pointSize = props.pointSize ? props.pointSize : pointSize
+      }
+
+      var maxBuckets = palette.length
+
+      var opacityHex = Math.floor(255 * opacity).toString(16)
+                                                   
+      palette = ee.List(palette)
+
+      // var hist = features.reduceColumns(ee.Reducer.histogram(numValues), [propertyName])    
+      // var means = ee.List(ee.Dictionary(hist.get('histogram')).get('bucketMeans'))
+
+      var percentiles = ee.List.sequence(0, 100, ee.Number(100).divide(ee.Number(maxBuckets).subtract(1))).map(function(p) {
+        return ee.Number(p).int()
+      })
+
+      var breaklines = features.reduceColumns(ee.Reducer.percentile(percentiles), [propertyName])
+
+      var means = percentiles.map(function(p) { return breaklines.get(ee.String('p').cat(p)) })
+      
+      if(props.pointSizeMin && props.pointSizeMax) {
+        var range = props.pointSizeMax - props.pointSizeMin
+        var sizeDelta = ee.Number(range).divide(palette.size())
+        
+        var getPointSize = function(index) { return ee.Number(props.pointSizeMin).add(sizeDelta.multiply(index)) }
+      } else {
+        var getPointSize = function(index) { return pointSize }
+      }
+
+      function findIndex(value, values) {
+        var gte = values.map(function(o) { 
+          return ee.Number(value).gte(o)
+        })
+        
+        var index = gte.indexOf(0)
+        
+        return ee.Algorithms.If(index.eq(-1), values.length().subtract(1), index)
+      }
+
+      features = features.map(function(f) {
+        var value = f.get(propertyName)
+   
+        var index = findIndex(value, means)
+        
+        var color = palette.get(index)
+        
+        return f.set({ style: { 
+          color: color, 
+          fillColor: ee.String(color).cat(opacityHex), 
+          width: width, 
+          pointSize: getPointSize(index),
+        }})
+      })
+      
+      // save equidistant palette
+      var min = breaklines.get(ee.String('p').cat(ee.Number(percentiles.get(0)).format('%d')))
+      var max = breaklines.get(ee.String('p').cat(ee.Number(percentiles.get(-1)).format('%d')))
+      
+      var equidistantValues = ee.List.sequence(min, max, ee.Number(max).subtract(min).divide(10))
+
+      var equidistantPalette = equidistantValues.map(function(v) {
+        var index = findIndex(v, means)
+        var color = palette.get(index)
+        return color
+      })
+      
+      var neighborhood = props.pointSizeMax ? props.pointSizeMax : pointSize
+
+      return features.style({ styleProperty: 'style', neighborhood: neighborhood })
+        .set({ 
+            breaklines: breaklines,
+            min: min,
+            max: max,
+            equidistantPalette: equidistantPalette
+        })
+    },
+
+    linear: function(features, propertyName, props) {
+      var palette = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
+      var opacity = 1
+      var opacityLine = 1
+      var width = 1
+      var pointSize = 2
+      
+      if(props) {
+        palette = props.palette ? props.palette : palette
+        opacity = props.opacity ? props.opacity : opacity
+        opacityLine = props.opacityLine ? props.opacityLine : opacityLine
+        width = props.width ? props.width : width
+        pointSize = props.pointSize ? props.pointSize : pointSize
+      }
+
+      var maxBuckets = palette.length
+
+      var opacityHex = Math.floor(255 * opacity).toString(16)
+      var opacityLineHex = Math.floor(255 * opacityLine).toString(16)
+                                                   
+      palette = ee.List(palette)
+
+      var min = ee.Number(features.aggregate_min(propertyName))
+      var max = ee.Number(features.aggregate_max(propertyName))
+
+      if(props) {
+        min = typeof(props.valueMin) !== 'undefined' ? ee.Number(props.valueMin) : min
+        max = typeof(props.valueMax) !== 'undefined' ? ee.Number(props.valueMax) : max
+      }
+      
+      var delta = max.subtract(min).divide(maxBuckets)
+      
+      var means = ee.List.sequence(0, maxBuckets-1).map(function(i) { return ee.Number(i).multiply(delta).add(min) })
+      
+      if(props.pointSizeMin && props.pointSizeMax) {
+        var range = props.pointSizeMax - props.pointSizeMin
+        var sizeDelta = ee.Number(range).divide(palette.size())
+        
+        var getPointSize = function(index) { return ee.Number(props.pointSizeMin).add(sizeDelta.multiply(index)) }
+      } else {
+        var getPointSize = function(index) { return pointSize }
+      }
+
+      var epsilon = ee.Number(means.get(-1)).multiply(1e-10)
+
+      function findIndex(value, values) {
+        var gte = values.map(function(o) { 
+          return ee.Number(value).subtract(epsilon).gte(o)
+        })
+        
+        var index = gte.indexOf(0)
+
+        return ee.Algorithms.If(index.eq(-1), values.length().subtract(1), index)
+      }
+      
+      var values = ee.List(features.aggregate_array(propertyName))
+      
+      features = features.map(function(f) {
+        var value = f.get(propertyName)
+   
+        var index = findIndex(value, means)
+        
+        var color = palette.get(index)
+        
+        return f.set({ style: { 
+          color: ee.String(color).cat(opacityLineHex), 
+          fillColor: ee.String(color).cat(opacityHex), 
+          width: width, 
+          pointSize: getPointSize(index)
+        },
+          pointSize: getPointSize(index),
+          index: index
+        })
+      })
+      
+      // print(features)
+      // print('country', features.aggregate_array('country'))
+      // print('pointSize', features.aggregate_array('pointSize'))
+      // print('index', features.aggregate_array('index'))
+      // print('propertyName', features.aggregate_array(propertyName))
+      
+      // save equidistant palette
+      var equidistantValues = ee.List.sequence(min, max, max.subtract(min).divide(10))
+
+      var equidistantPalette = equidistantValues.map(function(v) {
+        var index = findIndex(v, means)
+        var color = palette.get(index)
+        return color
+      })
+      
+      var neighborhood = props.pointSizeMax ? props.pointSizeMax : pointSize
+
+      return features.style({ styleProperty: 'style', neighborhood: neighborhood })
+        .set({ 
+            min: min,
+            max: max,
+            equidistantPalette: equidistantPalette,
+            means: means
+        })
+    },
+ 
+    label: function(features, propertyName, opt_textProperties) {
+      var props = { textColor: '000000', outlineColor: 'ffffff', outlineWidth: 2.5, outlineOpacity: 0.6, alignX: 'center', alignY: 'center' }
+
+      var scale = Map.getScale()
+  
+      if(opt_textProperties) {
+        props.fontSize = opt_textProperties.fontSize ? opt_textProperties.fontSize : props.fontSize
+        props.textColor = opt_textProperties.textColor ? opt_textProperties.textColor : props.textColor
+        props.outlineColor = opt_textProperties.outlineColor ? opt_textProperties.outlineColor : props.outlineColor
+        props.outlineWidth = opt_textProperties.outlineWidth ? opt_textProperties.outlineWidth : props.outlineWidth
+        props.outlineOpacity = opt_textProperties.outlineOpacity ? opt_textProperties.outlineOpacity : props.outlineOpacity
+        props.alignX = opt_textProperties.alignX ? opt_textProperties.alignX : props.alignX
+        props.alignY = opt_textProperties.alignY ? opt_textProperties.alignY : props.alignY
+        props.format = opt_textProperties.format ? opt_textProperties.format : null;
+        scale = opt_textProperties.scale ? opt_textProperties.scale : scale;
+      }
+
+      // draw text
+      var labels = features.map(function(f) {
+        if(props.format) {
+           var str = ee.Number(f.get(propertyName)).format(props.format)
+        } else {
+           var str = ee.String(f.get(propertyName))
+        }
+
+        return text.draw(str, f.geometry().centroid(), scale, props)
+      })
+
+      return ee.ImageCollection(labels).mosaic()
+    }
+}

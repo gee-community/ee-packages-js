@@ -1,0 +1,27 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var bounds = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-39.655934217371815, -5.031373071272657],
+          [-39.655934217371815, -5.215342678066852],
+          [-39.351063611903065, -5.215342678066852],
+          [-39.351063611903065, -5.031373071272657]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var assets = require('users/gena/packages:assets')
+
+var images = assets.getImages(bounds, {
+  missions: ['S2'],
+  cloudMask: true,
+  filter: ee.Filter.date('2020-05-01', '2022-01-01')
+}).sort('system:time_start')
+
+var image = images.first()
+
+Map.addLayer(image)
+Map.addLayer(image.select('cloud').selfMask(), { palette: ['ffff00'] })

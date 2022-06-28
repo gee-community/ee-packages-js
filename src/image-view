@@ -1,0 +1,77 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// very experimental, decorates image to query various information (pixel coordinates, pixel values)
+
+function ImageView(image, opt_band) {
+  var band = opt_band || 0
+  
+  this.image = image;
+  
+  this.image0 = image.select(band)
+  
+  // get image dimensions
+  var dimensions = ee.Dictionary(ee.List(ee.Dictionary(ee.Algorithms.Describe(this.image0)).get('bands')).get(0)).get('dimensions')
+  this.dimensions = ee.List(dimensions)
+
+  this.sizex = ee.Number(this.dimensions.get(0))
+  this.sizey = ee.Number(this.dimensions.get(1))
+
+  var proj = this.image0.projection()
+  this.proj = proj
+
+  this.scale = proj.nominalScale()
+
+  var coordsImage = ee.Image.pixelLonLat().reproject(proj)
+
+  // extract lat/lon coordinates as a list
+  var coordsList = coordsImage.reduceRegion({
+    reducer: ee.Reducer.toList(2), 
+    geometry: this.image0.geometry()
+  }).values().get(0)
+
+  coordsList = ee.List(coordsList)
+
+  // convert coordinates to points and add to map
+  var centers = coordsList.map(function(xy) {
+    var geom = ee.Algorithms.GeometryConstructors.Point(xy)
+    return ee.Feature(geom, {})
+  })
+
+  this.centers = ee.FeatureCollection(centers)
+}
+
+ImageView.prototype.getDimensions = function() {
+  return this.dimensions
+}
+
+ImageView.prototype.getPixelCenters = function() {
+  return this.centers
+}
+
+ImageView.prototype.getPixelValues = function() {
+  return this.image.reduceRegion({
+    reducer: ee.Reducer.toList(), 
+    geometry: this.image.geometry(), 
+    scale: this.scale
+  })
+}
+
+ImageView.prototype.getPixelCenter = function(x, y) {
+  return ee.Feature(this.centers.toList(1, this.sizex.multiply(y).add(x)).get(0))
+}
+
+ImageView.prototype.getPixelValue = function(x, y) {
+  return this.image.reduceRegion({
+    reducer: ee.Reducer.first(), 
+    geometry: this.getPixelCenter(x, y).geometry(), 
+    scale: this.scale,
+    crs: this.proj.crs()
+  })
+}
+
+exports.ImageView = ImageView

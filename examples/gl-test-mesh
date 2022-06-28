@@ -1,0 +1,79 @@
+Map.setCenter(0, 0, 7)
+
+var mesh = {
+  vertices: [ 
+    // front
+    [-1.0, -1.0,  1.0],
+    [ 1.0, -1.0,  1.0],
+    [ 1.0,  1.0,  1.0],
+    [-1.0,  1.0,  1.0],
+    // back
+    [-1.0, -1.0, -1.0],
+    [ 1.0, -1.0, -1.0],
+    [ 1.0,  1.0, -1.0],
+    [-1.0,  1.0, -1.0],
+  ],
+  edges: [ 
+    [0, 1], [1, 2], [2, 3], [3, 0], 
+    [4, 5], [5, 6], [6, 7], [7, 4], 
+    [0, 4], [1, 5], [2, 6], [3, 7] 
+  ]
+}
+
+var rotationX = function(angle) {
+  return ee.Array([ [1, 0, 0], [0, angle.cos(), angle.sin().multiply(-1)], [0, angle.sin(), angle.cos()] ])
+}
+
+var rotationY = function(angle) {
+  return ee.Array([ [angle.cos(), 0, angle.sin()], [0, 1, 0], [angle.sin().multiply(-1), 0, angle.cos()] ])
+}
+
+var rotationZ = function(angle) {
+  return ee.Array([ [angle.cos(), angle.sin().multiply(-1), 0], [angle.sin(), angle.cos(), 0], [0, 0, 1] ])
+}
+
+function rotate(vertices, angle, rotation) {
+  var angle = ee.Number(angle).multiply(Math.PI).divide(180)
+  vertices = rotation(angle).matrixMultiply(ee.Array(vertices).transpose()).transpose()
+  
+  return vertices
+}
+
+var vertices = ee.Array(mesh.vertices)
+vertices = rotate(vertices, 10, rotationX)
+vertices = rotate(vertices, 10, rotationY)
+
+var angleCount = 60
+var angleMax = 360
+var angleStep = angleMax / angleCount
+var vertices = ee.List.sequence(0, angleMax, angleStep).iterate(function(angle, prev) {
+  var list = ee.List(prev)
+
+  var vertices = list.get(-1)
+  
+  vertices = rotate(vertices, angleStep, rotationY)
+  
+  return list.add(vertices)
+}, ee.List([vertices]))
+
+var images = ee.List(vertices).map(function(vertices) {
+  vertices = ee.Array(vertices)
+
+  var lines = mesh.edges.map(function(edge) {
+    edge = ee.List(edge)
+    
+    return ee.Geometry.LineString([ 
+        vertices.slice(0, edge.get(0), ee.Number(edge.get(0)).add(1)).toList().flatten().slice(0, 2),
+        vertices.slice(0, edge.get(1), ee.Number(edge.get(1)).add(1)).toList().flatten().slice(0, 2)
+    ])
+  })
+
+  lines = ee.FeatureCollection(lines)
+  
+  return ee.Image().paint(lines, 1, 1)
+})
+
+images = ee.ImageCollection(images)
+
+var animation = require('users/gena/packages:animation')
+animation.animate(images, { maxFrames: Math.floor(angleMax / angleStep) })

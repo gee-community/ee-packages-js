@@ -1,0 +1,29 @@
+function dnorm(mean, sigma) {
+  return function(x) {
+    return ee.Number(x).subtract(mean).divide(ee.Number(sigma)).pow(2).multiply(-0.5).exp()
+      .divide(ee.Number(sigma).multiply(0.5 * Math.PI))
+  }
+}
+
+function qnorm(mean, sigma) {
+  return function(x) {
+    return ee.Number(x).multiply(2).subtract(1).erfInv().multiply(ee.Number(sigma).multiply(Math.sqrt(2))).add(mean)
+  }
+}
+
+exports.qnorm = qnorm
+
+exports.dnorm = dnorm
+
+
+
+function debug() {
+  var data = ee.List.sequence(-5, 5, 0.1).map(dnorm(0, 1))
+  print(ui.Chart.array.values(data, 0).setChartType('AreaChart'))
+      
+  var e = 0.0000001
+  var data = ee.List.sequence(0+e, 1-e, 0.0001).map(qnorm(0, 1))
+  print(ui.Chart.array.values(data, 0).setChartType('AreaChart'))
+}
+
+debug()

@@ -1,0 +1,22 @@
+var utils = require('users/gena/packages:utils')
+
+Map.setCenter(-86.58, 34.58, 14) // comment out and zoom to a random location
+
+// oritinal image
+var image = ee.ImageCollection('COPERNICUS/S2')
+  .filterBounds(Map.getCenter())
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5))
+  .first()
+  .resample('bicubic')
+  .divide(10000)
+
+Map.addLayer(image, { bands: ['B4', 'B3', 'B2'], min: 0, max: 0.5 }, 'original')
+
+// stretched image (arguments provided as a dictionary {} are optional)
+var imageStretched = utils.stretchImage(image.select(['B4', 'B3', 'B2']), {
+  percentiles: [1, 99],
+  bounds: Map.getBounds(true),
+  scale: Map.getScale()
+})
+
+Map.addLayer(imageStretched, { bands: ['B4', 'B3', 'B2'], gamma: 1.2, min: 0, max: 1 }, 'stretched')

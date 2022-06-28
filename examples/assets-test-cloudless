@@ -1,0 +1,23 @@
+var animation = require('users/gena/packages:animation')
+var assets = require('users/gena/packages:assets')
+
+var geometry = Map.getCenter()
+
+// var images = ee.ImageCollection('COPERNICUS/S2').filterBounds(geometry)
+// var vis = { min: 300, max: 4000, bands: ['B12', 'B8', 'B3'] }
+
+var images = assets.getImages(geometry, { missions: ['S2'] })
+var vis = { min: 0.03, max: 0.4, bands: ['swir', 'nir', 'green'] }
+
+print('Image count: ', images.size())
+
+images = assets.getMostlyCleanImages(images, Map.getBounds(true)).sort('system:time_start')
+print('Image count (cleaner): ', images.size())
+
+animation.animate(images, {
+  vis: vis,
+  position: 'bottom-right',
+  maxFrames: 50,
+  width: '500px',
+  timeStep: 50
+})

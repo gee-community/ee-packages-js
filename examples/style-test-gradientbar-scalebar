@@ -1,0 +1,82 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometryGradientBar = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-104.93453767982349, 39.73211681120685],
+          [-104.93453767982349, 39.731357722492966],
+          [-104.90874555793629, 39.731357722492966],
+          [-104.90874555793629, 39.73211681120685]]], null, false),
+    geometryScaleBar = 
+    /* color: #98ff00 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-104.93337896552906, 39.72541673952824],
+          [-104.93337896552906, 39.72502065579493],
+          [-104.90870264259205, 39.72502065579493],
+          [-104.90870264259205, 39.72541673952824]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+// File: style-test-gradientbar
+// Package sources: https://code.earthengine.google.com/?accept_repo=users/gena/packages
+
+Map.centerObject(ee.FeatureCollection([geometryGradientBar, geometryScaleBar]))
+
+var palettes = require('users/gena/packages:palettes')
+var style = require('users/gena/packages:style')
+var utils = require('users/gena/packages:utils')
+
+var dem = ee.Image("USGS/NED");
+
+var minMax = dem.reduceRegion(ee.Reducer.percentile([1, 99]), Map.getBounds(true), Map.getScale()).values()
+
+var min = ee.Number(minMax.get(0))
+var max = ee.Number(minMax.get(1))
+
+var exaggregate = 5
+var weight = 1.5
+var azimuth = 0
+var zenith = 45
+
+// Paired
+var palette = palettes.colorbrewer.Paired[12]
+var styled = dem.visualize({ min: min, max: max, palette: palette })
+Map.addLayer(styled, {}, 'Paired, styled', false)
+
+var hillshaded = utils.hillshadeit(styled, dem, weight, exaggregate, azimuth, zenith)
+Map.addLayer(hillshaded, {}, 'Paired, hillshaded')
+
+var textProperties = { fontSize:16, textColor: '000000', outlineColor: 'ffffff', outlineWidth: 2, outlineOpacity: 0.6 }
+
+// dim background
+Map.addLayer(ee.Image(1), {palette: ['ffffff']}, 'white', true, 0.5)
+
+// add a gradient bar
+var labels = ee.List.sequence(min, max, max.subtract(min).divide(5))
+var gradient = style.GradientBar.draw(geometryGradientBar, {
+  min: min, max: max, palette: palette, labels: labels, format: '%.0f', text: textProperties
+})
+Map.addLayer(gradient, {}, 'gradient bar (DEM)')
+
+// add a scale bar
+var scale = style.ScaleBar.draw(geometryScaleBar, {
+  steps:4, palette: ['5ab4ac', 'f5f5f5'], multiplier: 1000, format: '%.1f', units: 'km', text: textProperties
+})
+Map.addLayer(scale, {}, 'scale bar')
+

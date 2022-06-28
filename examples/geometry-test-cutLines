@@ -1,0 +1,21 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.LineString(
+        [[-104.71654486261713, 38.60407178910679],
+         [-104.71549880110132, 38.6045035807679],
+         [-104.71464049421655, 38.60484314325896],
+         [-104.71366417013513, 38.604776069314006],
+         [-104.71211385332452, 38.60442812221833],
+         [-104.71122872434961, 38.605006635737176],
+         [-104.71078884207117, 38.604507772907205]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var g = require('users/gena/packages:geometry')
+
+var o = g.explodeLineString(geometry, { count: geometry.length().divide(15).floor() })
+var segments = o.segments
+var points = o.points
+
+print(points.aggregate_array('offset'))
+
+Map.addLayer(ee.Image(0), {}, 'background', true, 0.5)
+Map.addLayer(o.segments.reduceToImage(['offset'], ee.Reducer.first()).focal_max(3).randomVisualizer())
+Map.addLayer(o.points.style({ pointSize: 6 }))

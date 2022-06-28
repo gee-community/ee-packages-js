@@ -1,0 +1,15 @@
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var hydro = require('users/gena/packages:hydro')
+
+// var smoothing = true
+var smoothing = false
+
+hydro.Map.addHand({layer: {name: 'HAND 30m, SRTM, FA threhold = 1000', smoothing: smoothing}})
+
+hydro.Map.addHand({layer: {name: 'HAND 90m, MERIT'}, type: 'MERIT', smoothing: smoothing})

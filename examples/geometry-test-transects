@@ -1,0 +1,32 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.LineString(
+        [[-104.11332197432773, 30.116700307856185],
+         [-103.47611494307773, 30.292353435692192],
+         [-102.37748213057773, 30.102444432809047],
+         [-101.77872724776523, 30.235419207764423],
+         [-101.33378095870273, 30.368214352537645]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var geomUtils = require('users/gena/packages:geometry')
+
+Map.centerObject(geometry)
+
+// number of segments to generate along the geometry
+var n = geometry.length().divide(10)
+
+// generate the list of offsets
+var distances = ee.List.sequence(0, geometry.length(), n)
+
+// split into n segments
+var segments = geometry.cutLines(distances).geometries()
+
+// generate transect for every segment by rotating it 
+var transects = segments.map(function(g) {
+  var length = 10000
+  var transect = geomUtils.createTransectAtCentroid(g, length)
+
+  return ee.Feature(transect)
+})
+
+transects = ee.FeatureCollection(transects)
+
+Map.addLayer(transects)

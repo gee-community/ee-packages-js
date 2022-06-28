@@ -1,0 +1,43 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/multifcer/three_gorges/threegorges_N");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var water = require('users/gena/packages:water')
+
+// Map.centerObject(table,8)
+// Map.setOptions('HYBRID')
+
+var region = table.geometry().bounds()
+var start = '1987-01-01'
+var stop = '1990-01-01'
+var palette = ["f7fbff","deebf7","c6dbef","9ecae1","6baed6","4292c6","2171b5","08519c","08306b"].reverse()
+var indexMin = 0
+var indexMax = 0.3
+
+var waterOccurrence = water.getWaterOccurrence(region, start, stop, indexMin, indexMax)
+// add composite median image as well
+var composite = ee.Image(waterOccurrence.get('WATER_COMPOSITE_MEDIAN'))
+Map.addLayer(composite.clip(table), {min: 0, max: 0.5}, 'composite')
+print(composite)
+// add water occurrence computed on-the-fly
+Map.addLayer(waterOccurrence.mask(waterOccurrence.multiply(2)).clip(table), {min: 0, max: 1, palette: palette}, 'water occurrence (MNDWI and NDWI)')
+
+print('image count:', waterOccurrence.get('WATER_IMAGE_COUNT'))
+
+Map.addLayer(ee.Image(waterOccurrence.mask(waterOccurrence.gte(0.50))), {palette:"00ff00"}, 'composite1')
+var a = ee.Image(waterOccurrence.mask(waterOccurrence.gte(0.50))).gte(0)
+
+var hand = ee.ImageCollection('users/gena/global-hand/hand-100')
+var hand30 = hand.mosaic().focal_mean(0.1).rename('elevation');
+
+var hand1 = hand30.select('elevation').lte(20)
+var k=a.gte(0).updateMask(hand1).clip(table)
+Map.addLayer(k,{palette:'ff0000'},'handwater')
+var k1=k.eq(1).multiply(ee.Image.pixelArea()).multiply(0.000001);
+var stats1 = k1.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: table,
+  scale: 30,
+  maxPixels: 1e13
+
+});
+print(stats1,'a');

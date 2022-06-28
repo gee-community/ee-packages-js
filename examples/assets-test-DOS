@@ -1,0 +1,43 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = /* color: #d63000 */ee.Geometry.Point([-116.71001623094513, 32.38087076052869]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+Copyright (c) 2018 Gennadii Donchyts. All rights reserved.
+
+This work is licensed under the terms of the MIT license.  
+For a copy, see <https://opensource.org/licenses/MIT>.
+*/
+
+var assets = require('users/gena/packages:assets')
+var animation = require('users/gena/packages:animation')
+
+// Map.centerObject(geometry, 13)
+
+var bounds = ee.Geometry(Map.getBounds(true))
+
+var images = assets.getImages(bounds.centroid(1), {
+  missions: [ 'S2', 'L8', 'L7' ],
+  filter: ee.Filter.date('2020-01-01', '2021-01-01'),
+  // resample: 'bicubic', // BUG: fails when bicubic is used, DOS returns negative values
+}) 
+
+// remove totally clouded images for current area
+// images = assets.getMostlyCleanImages(images, bounds, { cloudFrequencyThresholdDelta: 0.15 })
+images = assets.getMostlyCleanImages(images, bounds)
+
+images = images.sort('system:time_start', false)
+  // .limit(30) // use only first 30 
+  .map(function(i) { return i.set({ label: i.date().format('YYYY-MM-dd') }) })
+
+
+var maxDarkValue = 0.2
+images = assets.correctDOS(images, bounds, Map.getScale(), maxDarkValue)
+
+print(images.aggregate_array('dark'))
+
+animation.animate(images, {
+  vis: { bands: ['red', 'green', 'blue'], min: 0.015, max: 0.05 },
+  label: 'label'
+})
+
+

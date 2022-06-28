@@ -1,0 +1,8 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var pt = /* color: #d63000 */ee.Geometry.Point([-68.83521740840641, 34.08885648046128]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var Earth = require('users/gena/packages:earth').Earth
+
+var earth = new Earth(10, 10, { scale: 10000 })
+
+Map.addLayer(earth.getImageAt(pt, { zoom: 0.2 })) 
