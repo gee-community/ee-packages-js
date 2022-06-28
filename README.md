@@ -1,5 +1,7 @@
 # A set of userful utilities for Google Earth Engine (JavaScript version)
 
+For Python version of some utilities see: https://github.com/gee-community/ee-packages-py
+
 Access scripts in Google Earth Engine Code Editor:
 
 https://code.earthengine.google.com/?accept_repo=users/gena/packages
