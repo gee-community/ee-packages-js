@@ -160,7 +160,7 @@ function getImages(g, options) {
     }
   }
 
-  var s2 = ee.ImageCollection('COPERNICUS/S2')
+  var s2 = ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
     .filterBounds(g)
 
   if(options && options.filter) {
