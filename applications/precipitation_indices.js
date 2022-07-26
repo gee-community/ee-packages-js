@@ -4,7 +4,7 @@ Copyright (c) 2021 Deltares. All rights reserved.
 This work is licensed under the terms of the MIT license.  
 For a copy, see <https://opensource.org/licenses/MIT>.
 
-Author: Gennadii Donchyts
+Author: Gennadii Donchyts (gennadiy.donchyts@gmail.com)
 */
 
 function qnorm(x) {
